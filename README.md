@@ -132,7 +132,7 @@ Chrome DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`).
    it unlocks the **radar**.
 5. **Radar on a laptop.** DevTools → `⋮` → *More tools* → **Sensors** → *Location*:
    enter a custom latitude/longitude (checkpoint coordinates are in **Admin → Setup
-   Routes**). The needle, distance and "GOAL IS NEAR" follow your fake position.
+   Routes**). The arrow, distance and "YOU'RE HERE" follow your fake position.
 6. **Attack.** In a third window, log in as another team → **Powers → Freeze**
    (or Jam / Trap) → pick Dragon Warriors. Dragon Warriors' phone shows
    **INCOMING FREEZE** with a 15 s countdown. Shield it, Reflect it back, accept it,
@@ -245,6 +245,13 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
   Each team is dealt its own Jack, Queen and King - three of its stops, picked at
   random when routes are generated, met in that order - so teams find them at
   different checkpoints. The generator also spreads teams out.
+- **Radar = one rule: turn until the arrow points up, then walk.** The arrow is
+  drawn relative to the way the phone faces (compass; on iPhone after a tap), so
+  nobody needs to know where north is. Without a compass it follows the direction
+  of walking (GPS), and failing that shows north-up plus a plain direction word
+  ("Head NORTH-EAST"). A warmer/colder bar and a walking-time estimate back it up;
+  within 30 m the screen says "YOU'RE HERE - look for the QR". Frozen, jammed,
+  mid-puzzle or paused, it shows a plain card with the one thing to do next.
 - **Privacy:** the radar returns only a rounded distance and bearing, never the
   target's name or coordinates. The public leaderboard and results never show fouls.
   Attackers stay anonymous to their target.

@@ -430,40 +430,41 @@ def radar(
     at_start = team.progress == 0 and team.status in TeamStatus.PLAYING
     guided = is_guided(team, now) or at_start
 
-    def locked(reason: str, **extra) -> dict:
-        return {"locked": True, "reason": reason, **extra}
+    def locked(code: str, reason: str, **extra) -> dict:
+        # ``code`` lets the app pick a card and an action; ``reason`` is the fallback text.
+        return {"locked": True, "code": code, "reason": reason, **extra}
 
     if event.status == EventStatus.PAUSED:
-        return locked("The game is paused.")
+        return locked("PAUSED", "The game is paused.")
     if event.status in (EventStatus.DRAFT, EventStatus.CONFIGURED):
-        return locked("The radar switches on when the game starts.")
+        return locked("NOT_STARTED", "The radar switches on when the game starts.")
     if event.status == EventStatus.ENDED:
-        return locked("The game has ended.")
+        return locked("ENDED", "The game has ended.")
     if team.status == TeamStatus.DISQUALIFIED:
-        return locked("Your team has been disqualified.")
+        return locked("DISQUALIFIED", "Your team has been disqualified.")
     if team.status == TeamStatus.COMPLETED:
-        return locked("You found the Joker - the hunt is over for you!")
+        return locked("COMPLETED", "You found the Joker - the hunt is over for you!")
     if team.status not in TeamStatus.PLAYING:
-        return locked("Your team isn't in the game yet.")
+        return locked("NOT_IN_GAME", "Your team isn't in the game yet.")
     if team.started_at is not None and now < team.started_at:
-        return locked("Your start time hasn't arrived yet.", start_at=iso(team.started_at))
+        return locked("START_TIME", "Your start time hasn't arrived yet.", start_at=iso(team.started_at))
     if is_frozen(team, now):
-        return locked("FROZEN - your radar is off until the timer runs out.", frozen_until=iso(team.frozen_until))
+        return locked("FROZEN", "FROZEN - your radar is off until the timer runs out.", frozen_until=iso(team.frozen_until))
     if team.status == TeamStatus.PUZZLE_LOCKED:
-        return locked("Solve the checkpoint puzzle to unlock the radar.")
+        return locked("PUZZLE", "Solve the checkpoint puzzle to unlock the radar.")
     if is_jammed(team, now) and not guided:
-        return locked("JAMMED - a rival scrambled your radar. Keep moving, or use a Guide.", jammed_until=iso(team.jammed_until), jammed=True)
+        return locked("JAMMED", "JAMMED - a rival scrambled your radar. Keep moving, or use a Guide.", jammed_until=iso(team.jammed_until), jammed=True)
 
     route = team_route(team)
     if team.status == TeamStatus.FINAL:
         if not valid_coordinate(event.final_latitude, event.final_longitude):
-            return locked("Head to the coordinators' bench to find the Joker.")
+            return locked("NO_FINAL", "Head to the coordinators' bench to find the Joker.")
         target = (event.final_latitude, event.final_longitude)
         label, final = f"Final destination: {event.final_location_name}", True
         target_name = event.final_location_name
     else:
         if team.progress >= len(route):  # defensive: no usable route (never a 500)
-            return locked("Your route isn't set up - please see a coordinator.")
+            return locked("NO_ROUTE", "Your route isn't set up - please see a coordinator.")
         loc = route[team.progress].location
         target = (loc.latitude, loc.longitude)
         label, final = (f"Starting checkpoint (1 of {len(route)})" if at_start else f"Checkpoint {team.progress + 1} of {len(route)}"), False

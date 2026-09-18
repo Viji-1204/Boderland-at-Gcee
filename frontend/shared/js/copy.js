@@ -87,7 +87,7 @@ export const FACES = {
 export const RULES = [
   { en: 'Your team follows its own secret route through the campus checkpoints. When the game starts, the app shows your <strong>starting checkpoint</strong> with a Google Maps route - go there and scan its QR.', jp: '各チームは独自のルートでチェックポイントを巡ります。開始時にアプリが最初の地点を地図で示します。' },
   { en: '<strong>Scan the QR</strong> at your checkpoint. The right one reveals a <strong>puzzle</strong> and a fragment of your secret sentence.', jp: '正しいQRをスキャンするとパズルと暗号文の断片が現れます。' },
-  { en: 'Solve the puzzle to unlock the <strong>radar</strong>. It points to your next checkpoint - but never names it.', jp: 'パズルを解くとレーダーが次の目的地を示します。' },
+  { en: 'Solve the puzzle to unlock the <strong>radar</strong>: turn until its arrow points straight up, then walk. It shows the distance but never names the checkpoint.', jp: 'パズルを解くとレーダーが次の目的地を示します。矢印が上を向くまで回り、そのまま進もう。' },
   { en: 'Scanning <strong>someone else\'s checkpoint</strong> is a foul. Fouls are private, but they decide ties.', jp: '他チームのQRをスキャンするとファウルになります。' },
   { en: 'Meet the <strong>Jack, Queen and King</strong> on the way. After your last checkpoint, the radar leads to the coordinators - <strong>find the Joker</strong>.', jp: 'J・Q・Kを集め、最後にジョーカーを見つけよう。' },
   { en: '<strong>Attacks</strong> - Freeze, Jam or Trap - hit a rival unless they <strong>Shield</strong>, <strong>Reflect</strong> or have a <strong>Ward</strong> up. Lost? A <strong>Guide</strong> shows the exact way to your next checkpoint.', jp: '攻撃・防御・道しるべの特殊能力を使いこなせ。' },
