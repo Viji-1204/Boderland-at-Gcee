@@ -1,0 +1,175 @@
+/* Round 2 additions on top of Round 1's admin.css (unchanged). */
+[hidden] { display: none !important; }
+:root {
+  --bl-amber: #C98A1F;
+  --bl-frost: #6FB3D9;
+}
+
+/* extra status pills (Round 1 has ACTIVE / COMPLETED / IN_PROGRESS / NOT_STARTED / PAUSED) */
+.pill.DRAFT { background: #f1f5f9; color: #475569; }
+.pill.CONFIGURED { background: #fef3c7; color: #92400e; }
+.pill.LIVE { background: #dcfce7; color: #166534; }
+.pill.ENDED { background: #e2e8f0; color: #334155; }
+.pill.WAITING { background: #fef3c7; color: #92400e; }
+.pill.PUZZLE_LOCKED { background: #ede9fe; color: #5b21b6; }
+.pill.FROZEN { background: #e0f2fe; color: #075985; }
+.pill.FINAL { background: #fce7f3; color: #9d174d; }
+.pill.DISQUALIFIED { background: #fee2e2; color: #991b1b; }
+.pill.PENDING { background: #fef3c7; color: #92400e; }
+.pill.ACKNOWLEDGED { background: #e0f2fe; color: #075985; }
+.pill.RESOLVED { background: #dcfce7; color: #166534; }
+.pill.JACK, .pill.QUEEN, .pill.KING { background: #111827; color: #fff; }
+
+.r2-event-switch { padding: 12px 16px 14px; border-bottom: 1px solid #eef0f2; }
+.r2-event-switch label { display: block; font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; margin-bottom: 6px; }
+.r2-event-switch select { width: 100%; padding: 7px 8px; border: 1px solid #dee2e6; border-radius: 6px; font-size: .8rem; background: #fff; }
+.admin-nav a.disabled { opacity: .45; pointer-events: none; }
+
+/* lifecycle stepper */
+.r2-stepper { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+.r2-step { flex: 1; min-width: 110px; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font-size: .72rem; font-weight: 700; letter-spacing: .05em; color: #94a3b8; text-align: center; }
+.r2-step.done { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.r2-step.current { color: #fff; background: #111827; border-color: #111827; }
+.r2-step.paused { color: #1d1405; background: #fbbf24; border-color: #fbbf24; }
+
+/* readiness checklist */
+.r2-checklist { list-style: none; margin: 0; padding: 0; }
+.r2-checklist li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid #f1f3f5; font-size: .8rem; }
+.r2-checklist li:last-child { border-bottom: 0; }
+.r2-checklist .ok { color: #16a34a; }
+.r2-checklist .bad { color: #dc2626; }
+.r2-checklist small { display: block; color: #64748b; }
+
+/* team cards on the live dashboard */
+.r2-team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.r2-team-card { background: #fff; border: 1px solid #dee2e6; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.r2-team-card.FROZEN { border-color: var(--bl-frost); box-shadow: inset 4px 0 0 var(--bl-frost); }
+.r2-team-card.DISQUALIFIED { opacity: .6; }
+.r2-team-card.help { box-shadow: inset 4px 0 0 var(--bl-amber); }
+.r2-team-card.attacked { box-shadow: inset 4px 0 0 #dc2626; }
+.r2-team-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.r2-team-head strong { font-size: .92rem; }
+.r2-team-meta { font-size: .72rem; color: #64748b; font-family: var(--font-mono); }
+.r2-progress { height: 6px; border-radius: 999px; background: #eef2f7; overflow: hidden; }
+.r2-progress > span { display: block; height: 100%; background: #10b981; }
+.r2-kv { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .74rem; color: #334155; }
+.r2-kv b { font-family: var(--font-mono); }
+.r2-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn.tiny { padding: 4px 8px; font-size: .68rem; }
+.btn.warn { border-color: #fcd34d; color: #92400e; }
+.btn.good { border-color: #86efac; color: #166534; }
+
+.r2-cols { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .r2-cols { grid-template-columns: 1fr; } }
+.r2-feed { max-height: 420px; overflow-y: auto; font-size: .76rem; }
+.r2-feed div { padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
+.r2-feed time { color: #94a3b8; font-family: var(--font-mono); margin-right: 6px; }
+.r2-help-item { padding: 10px 0; border-bottom: 1px solid #f1f3f5; font-size: .8rem; }
+
+.r2-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
+.r2-form-grid label { font-size: .7rem; font-weight: 600; color: #475569; display: flex; flex-direction: column; gap: 4px; }
+.r2-form-grid input, .r2-form-grid select, .r2-inline-input, textarea.r2-textarea {
+  padding: 7px 9px; border: 1px solid #dee2e6; border-radius: 6px; font-size: .8rem; font-family: var(--font-body-en); background: #fff;
+}
+textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizing: border-box; }
+.r2-hint-text { font-size: .74rem; color: #64748b; margin: 6px 0 0; }
+.dtable td input.r2-inline-input { width: 100%; box-sizing: border-box; }
+.dtable tr.unselected td { color: #94a3b8; }
+.r2-route-cell { font-family: var(--font-mono); font-size: .72rem; white-space: nowrap; }
+.r2-route-cell .face { font-weight: 800; color: #b91c1c; }
+.r2-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.r2-tabs .btn.active { background: #111827; color: #fff; border-color: #111827; }
+.r2-banner-note { padding: 10px 14px; border-radius: 8px; font-size: .8rem; margin-bottom: 14px; }
+.r2-banner-note.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+.r2-banner-note.warn { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
+.r2-banner-note.bad { background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; }
+
+/* Setup Routes: checkpoint cards, the + button, GPS read-out, photo picker */
+.r2-setup-routes { padding-bottom: 84px; } /* room so the + button never covers the last row */
+.r2-ckpt-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: .8rem; color: #334155; margin-bottom: 12px; }
+.r2-ckpt-summary .bad, .r2-ckpt .bad { color: #dc2626; font-weight: 600; }
+.r2-ckpt-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.r2-ckpt { display: grid; grid-template-columns: 76px 1fr; gap: 10px 12px; background: #fff; border: 1px solid #dee2e6; border-radius: 10px; padding: 12px; }
+.r2-ckpt.out { background: #f8f9fa; }
+.r2-ckpt.out .r2-ckpt-title { color: #64748b; }
+.r2-ckpt-photo { width: 76px; height: 76px; padding: 0; border-radius: 8px; border: 1px dashed #cbd5e1; background: #f1f5f9; color: #94a3b8; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; }
+.r2-ckpt-photo:disabled { cursor: default; }
+.r2-ckpt-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.r2-ckpt-body { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.r2-ckpt-title { font-size: .9rem; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.r2-ckpt-coords { font-family: var(--font-mono); font-size: .74rem; color: #475569; overflow-wrap: anywhere; }
+.r2-ckpt-coords a { color: #1d4ed8; text-decoration: none; }
+.r2-ckpt-coords .mi-sm { vertical-align: -3px; }
+.r2-ckpt-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.r2-ckpt-actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid #f1f3f5; padding-top: 8px; }
+.r2-fab { position: fixed; right: 24px; bottom: 24px; z-index: 40; width: 60px; height: 60px; border-radius: 50%; border: none; background: var(--bl-ink, #111827); color: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .28); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.r2-fab .mi { font-size: 34px; }
+.r2-fab:active { transform: scale(.95); }
+.r2-gps { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 10px; background: #f1f5f9; border: 1px solid #cbd5e1; }
+.r2-gps[data-quality="good"] { background: #f0fdf4; border-color: #86efac; }
+.r2-gps[data-quality="ok"] { background: #fffbeb; border-color: #fcd34d; }
+.r2-gps[data-quality="poor"] { background: #fef2f2; border-color: #fca5a5; }
+.r2-gps-main { font-family: var(--font-mono); font-weight: 700; font-size: .95rem; }
+.r2-gps-sub { font-size: .74rem; color: #475569; }
+.r2-form-grid label.r2-check { flex-direction: row; align-items: center; gap: 8px; font-size: .8rem; align-self: end; padding-bottom: 8px; }
+.r2-photo-pick { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.r2-photo-label { font-size: .75rem; font-weight: 600; color: #475569; }
+.r2-photo-preview img { display: block; max-width: 100%; max-height: 220px; border-radius: 8px; }
+.r2-photo-full img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.r2-ckpt-pointer { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: .85rem; }
+.r2-ckpt-pointer > div { flex: 1; min-width: 220px; }
+@media (max-width: 860px) {
+  .r2-ckpt-list { grid-template-columns: 1fr; }
+  .r2-fab { right: 16px; bottom: 16px; }
+}
+
+/* "scan to open the team app" link for phones (QR page) */
+.r2-applink { display: flex; gap: 16px; align-items: center; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.r2-applink:empty { display: none; }
+.r2-applink img { width: 132px; height: 132px; flex: none; }
+.r2-applink div { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; min-width: 0; }
+.r2-applink code { word-break: break-all; }
+
+/* printable QR sheet */
+.r2-qr-sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.r2-qr-card { background: #fff; border: 2px solid #111; border-radius: 12px; padding: 14px; text-align: center; break-inside: avoid; page-break-inside: avoid; }
+.r2-qr-card .code { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; }
+.r2-qr-card .name { font-size: .8rem; color: #475569; }
+.r2-qr-card .img { margin: 10px auto; width: 190px; height: 190px; display: flex; align-items: center; justify-content: center; }
+.r2-qr-card .img svg, .r2-qr-card .img img { width: 100%; height: 100%; }
+.r2-qr-card .token { font-family: var(--font-mono); font-size: .78rem; word-break: break-all; }
+.r2-qr-card .brand-line { font-size: .6rem; letter-spacing: .14em; text-transform: uppercase; color: #94a3b8; margin-top: 6px; }
+@media print {
+  .admin-shell { display: block; height: auto; overflow: visible; background: #fff; }
+  .admin-nav, .no-print { display: none !important; }
+  .admin-main { height: auto; overflow: visible; padding: 0; max-width: none; }
+  .r2-qr-sheet { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Phones: Round 1's admin.css meant the menu to become a top bar here, but
+   its later sidebar rules override that, so the menu filled the screen and
+   hid the page. The menu becomes one scrollable row above the content. */
+@media (max-width: 860px) {
+  .admin-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .admin-nav {
+    flex: none; flex-direction: row; align-items: center; gap: 2px;
+    height: auto; overflow-x: auto; overflow-y: hidden;
+    padding: 4px 6px; border-right: none; border-bottom: 1px solid #dee2e6; box-shadow: none;
+    scrollbar-width: thin;
+  }
+  .admin-nav .brand { display: none; }
+  .admin-nav a { flex: none; white-space: nowrap; padding: 10px 10px; border-left: none; border-bottom: 3px solid transparent; }
+  .admin-nav a:hover { border-left-color: transparent; }
+  .admin-nav a.active { border-bottom-color: var(--bl-ink); }
+  .r2-event-switch { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px; border-bottom: none; }
+  .r2-event-switch label { margin: 0; }
+  .r2-event-switch select { width: auto; max-width: 190px; }
+  .admin-nav .role-tag { flex: none; margin: 0 0 0 6px; padding: 8px 10px; border-top: none; white-space: nowrap; }
+  .admin-main { flex: 1; min-height: 0; height: auto; max-width: none; overflow-y: auto; }
+}
+
+/* Puzzles page: the six built-in types */
+.r2-puzzle-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.r2-puzzle-types > div { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 10px 46px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; font-size: .82rem; }
+.r2-puzzle-types small { color: #64748b; line-height: 1.35; }
+.r2-puzzle-num { position: absolute; left: 12px; top: 10px; width: 24px; height: 24px; border-radius: 50%; background: #111827; color: #fff; font-size: .75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }

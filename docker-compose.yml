@@ -1,0 +1,58 @@
+# Round 2 with Postgres (spec section 30). Data survives restarts in the
+# `pgdata` volume. Put JWT_SECRET and ADMIN_PASSWORD in a `.env` file next to
+# this one (see .env.example) - compose refuses to start without them.
+#
+#   docker compose up -d --build     ->  http://localhost:8000
+#   docker compose ps                ->  api should say "(healthy)"
+#   docker compose logs -f api       ->  live server log
+#   docker compose down              ->  stop (keeps the data; add -v to WIPE it)
+#
+# Shows up in Docker Desktop as "borderland-round2". Round 1's old stack also
+# uses port 8000: run one at a time, or set ROUND2_PORT in .env.
+#
+# For the event, put an HTTPS reverse proxy (Caddy / nginx) in front of port
+# 8000: phone cameras and GPS only work on https://.
+name: borderland-round2
+
+services:
+  api:
+    build: .
+    ports:
+      - "${ROUND2_PORT:-8000}:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DATABASE_URL: postgresql+psycopg2://round2:${POSTGRES_PASSWORD:-round2}@postgres:5432/round2
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The image has no curl; /api/v1/health also checks the database.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: round2
+      POSTGRES_USER: round2
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-round2}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U round2 -d round2"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  pgdata:

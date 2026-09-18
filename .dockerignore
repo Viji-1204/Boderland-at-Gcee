@@ -1,0 +1,23 @@
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+.git
+.gitignore
+.env
+.env.*
+**/.env
+backend/data
+# (patterns are relative to this folder - **/ also catches backend/round2.db)
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite3
+.idea
+.vscode
+.DS_Store
+*.log
+# not needed inside the image
+Borderland-GCEE-main (2)
+Round 2 Full Architecture
+Round 2 Full Architecture.zip
+round2_backup_*.zip

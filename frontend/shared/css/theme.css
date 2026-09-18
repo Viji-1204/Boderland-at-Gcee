@@ -1,0 +1,717 @@
+/* ==========================================================================
+   Borderland-GCEE — shared theme
+   Implements THEME_GUIDE.md exactly. Do not introduce colors, radii, or
+   fonts outside this token set — every screen in team-app/ and admin-app/
+   is built from these primitives.
+   ========================================================================== */
+
+/* Fix §5.2: Google Fonts @import moved to <link rel="preconnect"> + <link rel="stylesheet">
+   in each index.html <head> to eliminate the render-blocking extra round-trip.
+   The @import here caused fonts to be discovered only after CSS parsing —
+   adding ~300-800ms of blank screen on congested venue Wi-Fi. */
+
+:root {
+  /* -- palette (THEME_GUIDE §Color palette) -- */
+  --bl-black: #0A0E14;
+  /* dark-mode background */
+  --bl-ink: #111111;
+  /* text on light */
+  --bl-white: #FFFFFF;
+  --bl-red: #D5262B;
+  /* hearts / diamonds accent */
+  --bl-blue: #2B4A6F;
+  /* dark-mode line-art / accent */
+  --bl-gray: #6B6B6B;
+  /* Fix §5.1: was #9A9A9A (~2.4:1 contrast on white, fails WCAG AA).
+                               *  #6B6B6B gives ~5.7:1 on white, passes AA for normal text.
+                               *  Used for .status-note, placeholders, .number-cell.taken labels —
+                               *  exactly the text most critical to read quickly during a live event. */
+  --bl-blue-dim: #17324d;
+  /* pressed / border state of blue */
+  --bl-red-dim: #8f1418;
+  /* pressed state of red */
+  --bl-hairline: rgba(17, 17, 17, 0.16);
+  --bl-hairline-dark: rgba(255, 255, 255, 0.22);
+
+  /* -- type -- */
+  --font-display: 'Oswald', 'Noto Sans JP', sans-serif;
+  --font-body-en: 'Inter', sans-serif;
+  --font-body-jp: 'Noto Sans JP', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-typewriter: 'Courier Prime', 'Courier New', Courier, 'Lucida Console', monospace;
+  --font-blackletter: 'UnifrakturMaguntia', cursive;
+
+  /* -- layout -- */
+  --radius-none: 0;
+  --radius-pill: 999px;
+  --radius-tile: 18px;
+  --gap-xs: 6px;
+  --gap-sm: 12px;
+  --gap-md: 20px;
+  --gap-lg: 32px;
+  --gap-xl: 48px;
+  --max-w: 480px;
+  /* event app is phone-first; desktop centers this column */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--font-body-en);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--bl-white);
+  color: var(--bl-ink);
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+p {
+  margin: 0;
+}
+
+::selection {
+  background: var(--bl-red);
+  color: var(--bl-white);
+}
+
+.app-shell {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bl-white);
+}
+
+/* ==========================================================================
+   Light / functional mode — forms, countdowns, dense content
+   ========================================================================== */
+.mode-light {
+  background: var(--bl-white);
+  color: var(--bl-ink);
+}
+
+/* ==========================================================================
+   Dark / immersive mode — home, hub
+   ========================================================================== */
+.mode-dark {
+  background:
+    linear-gradient(rgba(10, 14, 20, 0.72), rgba(10, 14, 20, 0.72)),
+    url('../assets/card-back-tall.jpg') center / cover no-repeat fixed;
+  color: var(--bl-white);
+}
+
+@media (min-width: 720px) {
+  .mode-dark {
+    background:
+      linear-gradient(rgba(10, 14, 20, 0.72), rgba(10, 14, 20, 0.72)),
+      url('../assets/card-back-wide.jpg') center / cover no-repeat fixed;
+  }
+}
+
+/* ==========================================================================
+   Bracket header — 【 LABEL 】
+   ========================================================================== */
+.bracket-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: var(--gap-lg) var(--gap-md) var(--gap-sm);
+}
+
+.bracket-header .jp {
+  font-size: 1.5rem;
+}
+
+.bracket-header .en {
+  display: block;
+  font-family: var(--font-body-en);
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bl-gray);
+  margin-top: 4px;
+}
+
+.bracket-header-stack {
+  text-align: center;
+}
+
+.mode-dark .bracket-header .en {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ==========================================================================
+   Two-tier label — bold primary line + muted secondary line
+   ========================================================================== */
+.tier-label {
+  display: block;
+  margin-bottom: var(--gap-xs);
+}
+
+.tier-label .primary {
+  display: block;
+  font-family: var(--font-body-jp);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--bl-ink);
+}
+
+.tier-label .secondary {
+  display: block;
+  font-family: var(--font-body-en);
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--bl-gray);
+  margin-top: 2px;
+  letter-spacing: 0.03em;
+}
+
+.mode-dark .tier-label .primary {
+  color: var(--bl-white);
+}
+
+/* ==========================================================================
+   Form fields — hairline / bottom-border, no fill
+   ========================================================================== */
+.field {
+  margin-bottom: var(--gap-md);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px solid var(--bl-hairline);
+  background: transparent;
+  font-family: var(--font-body-en);
+  font-size: 1rem;
+  padding: 10px 2px;
+  color: var(--bl-ink);
+  border-radius: 0;
+  outline: none;
+  transition: border-color .15s ease;
+}
+
+.field input::placeholder {
+  color: var(--bl-gray);
+  font-weight: 400;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: var(--bl-ink);
+}
+
+.field.boxed input,
+.field.boxed select {
+  border: 1.5px solid var(--bl-hairline);
+  padding: 12px 10px;
+}
+
+.field-error {
+  font-size: 0.72rem;
+  color: var(--bl-red);
+  margin-top: 6px;
+}
+
+/* ==========================================================================
+   Primary CTA — solid black pill, full width, bottom-anchored
+   ========================================================================== */
+.cta-dock {
+  margin-top: auto;
+  padding: var(--gap-md);
+  padding-bottom: max(var(--gap-md), env(safe-area-inset-bottom));
+}
+
+.cta-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--bl-ink);
+  color: var(--bl-white);
+  font-family: var(--font-body-en);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  padding: 16px 20px;
+  transition: transform .1s ease, opacity .15s ease;
+}
+
+.cta-btn:active {
+  transform: scale(0.98);
+}
+
+.cta-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.cta-btn.ghost {
+  background: transparent;
+  color: var(--bl-ink);
+  border: 1.5px solid var(--bl-ink);
+}
+
+.mode-dark .cta-btn.ghost {
+  color: var(--bl-white);
+  border-color: var(--bl-white);
+}
+
+.cta-btn.danger {
+  background: var(--bl-red);
+}
+
+/* ==========================================================================
+   Suit iconography
+   ========================================================================== */
+.suit-row {
+  display: flex;
+  justify-content: center;
+  gap: var(--gap-md);
+  padding: var(--gap-md) 0;
+}
+
+.suit-icon {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+.suit-icon.black path {
+  fill: var(--bl-ink);
+}
+
+.suit-icon.red path {
+  fill: var(--bl-red);
+}
+
+.mode-dark .suit-icon.black path {
+  fill: var(--bl-white);
+}
+
+.suit-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--gap-sm);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-tile);
+  background: transparent;
+}
+
+.suit-chip.selected {
+  border-color: var(--bl-ink);
+  background: rgba(17, 17, 17, 0.04);
+}
+
+.suit-chip span {
+  font-size: 0.68rem;
+  color: var(--bl-gray);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Countdown display — huge digital face, dead centered
+   ========================================================================== */
+.countdown-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--gap-sm);
+  padding: var(--gap-lg);
+}
+
+.countdown-face {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: clamp(3rem, 14vw, 4.6rem);
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--bl-ink);
+}
+
+.countdown-face.paused {
+  color: var(--bl-gray);
+}
+
+.countdown-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bl-gray);
+}
+
+.mode-dark .countdown-face {
+  color: var(--bl-white);
+}
+
+/* ==========================================================================
+   Dark-mode home hub — icon tiles
+   ========================================================================== */
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--gap-lg) var(--gap-md);
+  padding: var(--gap-lg);
+  flex: 1;
+  align-content: center;
+}
+
+.hub-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  color: var(--bl-white);
+}
+
+.hub-tile .tile-icon {
+  width: 68px;
+  height: 68px;
+  background: var(--bl-white);
+  border-radius: var(--radius-tile);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.hub-tile .tile-icon svg,
+.hub-tile .tile-icon img {
+  width: 30px;
+  height: 30px;
+}
+
+/* icon tiles are white regardless of mode — suit glyphs inside them must
+   stay on their normal (light-mode) fill, not the dark-mode white override */
+.hub-tile .tile-icon .suit-icon.black path {
+  fill: var(--bl-ink) !important;
+}
+
+.hub-tile .tile-icon .suit-icon.red path {
+  fill: var(--bl-red) !important;
+}
+
+.hub-tile .tile-label {
+  font-family: var(--font-body-en);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.hub-wordmark {
+  font-family: var(--font-blackletter);
+  font-size: 2.6rem;
+  text-align: center;
+  color: var(--bl-white);
+  padding-top: var(--gap-lg);
+}
+
+/* ==========================================================================
+   Diamond bottom navigation — signature dark-mode treatment
+   ========================================================================== */
+.diamond-nav {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: var(--gap-md) var(--gap-sm);
+  padding-bottom: max(var(--gap-md), env(safe-area-inset-bottom));
+}
+
+.diamond-btn {
+  width: 52px;
+  height: 52px;
+  background: transparent;
+  border: 1.5px solid var(--bl-white);
+  transform: rotate(45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.diamond-btn .diamond-icon {
+  transform: rotate(-45deg);
+  width: 20px;
+  height: 20px;
+  color: var(--bl-white);
+}
+
+.diamond-btn.active {
+  background: var(--bl-white);
+}
+
+.diamond-btn.active .diamond-icon {
+  color: var(--bl-black);
+}
+
+/* ==========================================================================
+   Status pills / feedback text
+   ========================================================================== */
+.status-note {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--bl-gray);
+  padding: var(--gap-sm) var(--gap-md);
+}
+
+.status-note.error {
+  color: var(--bl-red);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid currentColor;
+}
+
+.badge.qualified {
+  color: #1a7a3c;
+}
+
+.badge.eliminated {
+  color: var(--bl-red);
+}
+
+.badge.pending {
+  color: var(--bl-gray);
+}
+
+/* ==========================================================================
+   Generic content chrome
+   ========================================================================== */
+.top-icon-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-sm);
+  padding: var(--gap-md) var(--gap-md) 0;
+}
+
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--gap-md);
+}
+
+.card {
+  border: 1.5px solid var(--bl-hairline);
+  border-radius: var(--radius-none);
+  padding: var(--gap-md);
+  margin-bottom: var(--gap-md);
+}
+
+.mode-dark .card {
+  border-color: var(--bl-hairline-dark);
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-sm);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.center {
+  text-align: center;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Cstyle%3E%40keyframes p%7B0%25,20%25%7Bopacity:1;transform:scale(1.15)%7D25%25,95%25%7Bopacity:0.28;transform:scale(1)%7D100%25%7Bopacity:1;transform:scale(1.15)%7D%7D.s%7Btransform-box:fill-box;transform-origin:center;animation:p 3.2s infinite ease%7D.s1%7Banimation-delay:0s%7D.s2%7Banimation-delay:0.8s%7D.s3%7Banimation-delay:1.6s%7D.s4%7Banimation-delay:2.4s%7D%3C/style%3E%3Cg stroke='%23111111' stroke-width='1.5'%3E%3Cline x1='31.5' y1='31.5' x2='118.5' y2='118.5'/%3E%3Cline x1='118.5' y1='31.5' x2='31.5' y2='118.5'/%3E%3C/g%3E%3Cg class='s s1'%3E%3Cpath fill='%23111111' transform='translate(54, 4) scale(1.75)' d='M12 2a3.2 3.2 0 0 0-3.2 3.2c0 .5.1 1 .3 1.4A3.4 3.4 0 1 0 8.6 13c.9 0 1.7-.3 2.4-.9-.5 2.7-1.6 4.6-3.2 6.1a.6.6 0 0 0 .4 1h8a.6.6 0 0 0 .4-1c-1.6-1.5-2.7-3.4-3.2-6.1.7.6 1.5.9 2.4.9A3.4 3.4 0 1 0 14.9 6.6c.2-.4.3-.9.3-1.4A3.2 3.2 0 0 0 12 2z'/%3E%3C/g%3E%3Cg class='s s2'%3E%3Cpath fill='%23e2192c' transform='translate(104, 54) scale(1.75)' d='M12 21s-7.5-4.6-10.2-9.3C.3 9 1.4 5.4 4.7 4.4c2-.6 4 .2 5.3 2 .5.7 1 1.6 2 1.6s1.5-.9 2-1.6c1.3-1.8 3.3-2.6 5.3-2 3.3 1 4.4 4.6 2.9 7.3C19.5 16.4 12 21 12 21z'/%3E%3C/g%3E%3Cg class='s s3'%3E%3Cpath fill='%23e2192c' transform='translate(54, 104) scale(1.75)' d='M12 2c2.5 4 5.5 7 8 10-2.5 3-5.5 6-8 10-2.5-4-5.5-7-8-10 2.5-3 5.5-6 8-10z'/%3E%3C/g%3E%3Cg class='s s4'%3E%3Cpath fill='%23111111' transform='translate(4, 54) scale(1.75)' d='M12 2C9 6 4 9.5 4 14a4 4 0 0 0 7 2.6c-.3 2.2-1.2 3.7-2.6 4.9a.6.6 0 0 0 .4 1h6.4a.6.6 0 0 0 .4-1c-1.4-1.2-2.3-2.7-2.6-4.9A4 4 0 0 0 20 14c0-4.5-5-8-8-12z'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url('../assets/borderland-loader.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  margin: var(--gap-lg) auto;
+}
+
+.mode-dark .spinner {
+  border: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'%3E%3Cstyle%3E%40keyframes p%7B0%25,20%25%7Bopacity:1;transform:scale(1.15)%7D25%25,95%25%7Bopacity:0.28;transform:scale(1)%7D100%25%7Bopacity:1;transform:scale(1.15)%7D%7D.s%7Btransform-box:fill-box;transform-origin:center;animation:p 3.2s infinite ease%7D.s1%7Banimation-delay:0s%7D.s2%7Banimation-delay:0.8s%7D.s3%7Banimation-delay:1.6s%7D.s4%7Banimation-delay:2.4s%7D%3C/style%3E%3Cg stroke='%23ffffff' stroke-width='1.5'%3E%3Cline x1='31.5' y1='31.5' x2='118.5' y2='118.5'/%3E%3Cline x1='118.5' y1='31.5' x2='31.5' y2='118.5'/%3E%3C/g%3E%3Cg class='s s1'%3E%3Cpath fill='%23ffffff' transform='translate(54, 4) scale(1.75)' d='M12 2a3.2 3.2 0 0 0-3.2 3.2c0 .5.1 1 .3 1.4A3.4 3.4 0 1 0 8.6 13c.9 0 1.7-.3 2.4-.9-.5 2.7-1.6 4.6-3.2 6.1a.6.6 0 0 0 .4 1h8a.6.6 0 0 0 .4-1c-1.6-1.5-2.7-3.4-3.2-6.1.7.6 1.5.9 2.4.9A3.4 3.4 0 1 0 14.9 6.6c.2-.4.3-.9.3-1.4A3.2 3.2 0 0 0 12 2z'/%3E%3C/g%3E%3Cg class='s s2'%3E%3Cpath fill='%23e2192c' transform='translate(104, 54) scale(1.75)' d='M12 21s-7.5-4.6-10.2-9.3C.3 9 1.4 5.4 4.7 4.4c2-.6 4 .2 5.3 2 .5.7 1 1.6 2 1.6s1.5-.9 2-1.6c1.3-1.8 3.3-2.6 5.3-2 3.3 1 4.4 4.6 2.9 7.3C19.5 16.4 12 21 12 21z'/%3E%3C/g%3E%3Cg class='s s3'%3E%3Cpath fill='%23e2192c' transform='translate(54, 104) scale(1.75)' d='M12 2c2.5 4 5.5 7 8 10-2.5 3-5.5 6-8 10-2.5-4-5.5-7-8-10 2.5-3 5.5-6 8-10z'/%3E%3C/g%3E%3Cg class='s s4'%3E%3Cpath fill='%23ffffff' transform='translate(4, 54) scale(1.75)' d='M12 2C9 6 4 9.5 4 14a4 4 0 0 0 7 2.6c-.3 2.2-1.2 3.7-2.6 4.9a.6.6 0 0 0 .4 1h6.4a.6.6 0 0 0 .4-1c-1.4-1.2-2.3-2.7-2.6-4.9A4 4 0 0 0 20 14c0-4.5-5-8-8-12z'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url('../assets/borderland-loader-dark.svg');
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: var(--bl-ink);
+  color: var(--bl-white);
+  padding: 12px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 999;
+  max-width: calc(100% - 48px);
+}
+
+.toast.error {
+  background: var(--bl-red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+
+
+/* Playing-card number picker — base shared styles */
+.number-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  perspective: 1200px;
+}
+
+@media (min-width: 440px) {
+  .number-grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+}
+
+.playing-card {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  container-type: inline-size;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.playing-card.taken {
+  cursor: not-allowed;
+}
+
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  border-radius: 8px;
+  animation: card-deal 0.35s ease backwards;
+}
+
+.card-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.card-front {
+  background: #ffffff;
+  border: 1px solid #dcd7ce;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+}
+
+.card-back {
+  background: url('../assets/card_backside.webp') center / cover no-repeat;
+  border: 1px solid #dcd7ce;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+  transform: rotateY(180deg);
+}
+
+.playing-card:hover:not(.taken) .card-inner {
+  transform: translateY(-5px);
+}
+
+.playing-card.selected .card-front {
+  border-color: #d4af37;
+  box-shadow: 0 0 0 2px #d4af37, 0 4px 16px rgba(212, 175, 55, 0.45);
+}
+
+@keyframes card-deal {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
