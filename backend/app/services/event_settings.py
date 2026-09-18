@@ -8,7 +8,10 @@ from app.models import Event
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "radar_near_radius_m": 30,
-    "freeze_duration_s": 120,
+    "freeze_duration_s": 120,  # FREEZE attack
+    "jam_duration_s": 90,  # JAM attack: radar blackout
+    "ward_duration_s": 300,  # WARD defence: attacks auto-blocked
+    "guide_duration_s": 180,  # GUIDE: current target revealed
     "attack_response_window_s": 15,
     "staggered_start_offset_s": 120,
     "geofence_mode": "off",  # off | warn | block
@@ -21,6 +24,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 _SPECS: dict[str, tuple] = {
     "radar_near_radius_m": (int, 5, 500),
     "freeze_duration_s": (int, 10, 1800),
+    "jam_duration_s": (int, 10, 1800),
+    "ward_duration_s": (int, 30, 3600),
+    "guide_duration_s": (int, 30, 1800),
     "attack_response_window_s": (int, 5, 120),
     "staggered_start_offset_s": (int, 0, 1800),
     "geofence_mode": ("choice", ("off", "warn", "block")),

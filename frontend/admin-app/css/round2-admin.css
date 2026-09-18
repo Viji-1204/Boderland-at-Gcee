@@ -45,7 +45,6 @@
 .r2-team-card { background: #fff; border: 1px solid #dee2e6; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
 .r2-team-card.FROZEN { border-color: var(--bl-frost); box-shadow: inset 4px 0 0 var(--bl-frost); }
 .r2-team-card.DISQUALIFIED { opacity: .6; }
-.r2-team-card.help { box-shadow: inset 4px 0 0 var(--bl-amber); }
 .r2-team-card.attacked { box-shadow: inset 4px 0 0 #dc2626; }
 .r2-team-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
 .r2-team-head strong { font-size: .92rem; }
@@ -64,7 +63,6 @@
 .r2-feed { max-height: 420px; overflow-y: auto; font-size: .76rem; }
 .r2-feed div { padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
 .r2-feed time { color: #94a3b8; font-family: var(--font-mono); margin-right: 6px; }
-.r2-help-item { padding: 10px 0; border-bottom: 1px solid #f1f3f5; font-size: .8rem; }
 
 .r2-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
 .r2-form-grid label { font-size: .7rem; font-weight: 600; color: #475569; display: flex; flex-direction: column; gap: 4px; }
@@ -173,3 +171,5 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
 .r2-puzzle-types > div { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 10px 46px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; font-size: .82rem; }
 .r2-puzzle-types small { color: #64748b; line-height: 1.35; }
 .r2-puzzle-num { position: absolute; left: 12px; top: 10px; width: 24px; height: 24px; border-radius: 50%; background: #111827; color: #fff; font-size: .75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.r2-restart-list { margin: 0; padding-left: 18px; font-size: .82rem; line-height: 1.45; }
+.r2-restart-list li { margin-bottom: 4px; }

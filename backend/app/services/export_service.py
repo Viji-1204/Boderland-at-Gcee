@@ -157,7 +157,7 @@ def build_results_workbook(*, event_name: str, rows: Sequence[dict], generated_a
         ],
         headers=[
             "Rank", "Team Code", "Team Name", "Status", "Time", "Fouls", "Checkpoints",
-            "Jack", "Queen", "King", "Attacks", "Defences", "Help",
+            "Jack", "Queen", "King", "Attacks", "Defences", "Guides",
             "Started (UTC)", "Finished (UTC)", "Leader", "Phone", "Email",
         ],
         rows=[
@@ -165,7 +165,7 @@ def build_results_workbook(*, event_name: str, rows: Sequence[dict], generated_a
                 r["rank"], r["team_code"], r["team_name"], r["status"], format_elapsed(r["elapsed_s"]), r["foul_count"],
                 f"{r['checkpoints']}/{r['total_checkpoints']}",
                 "yes" if r["face_cards"]["JACK"] else "", "yes" if r["face_cards"]["QUEEN"] else "", "yes" if r["face_cards"]["KING"] else "",
-                r["attacks_used"], r["defences_used"], r["help_used"],
+                r["attacks_used"], r["defences_used"], r["guides_used"],
                 r["started_at"], r["completed_at"], r["leader_name"], r["leader_phone"], r["leader_email"],
             ]
             for r in rows

@@ -83,11 +83,11 @@ def test_attack_without_power_reveals_nothing_about_the_target(client):
     with SessionLocal() as db:
         from app.models import TeamPower
 
-        tp = db.query(TeamPower).filter(TeamPower.team_id == a["id"], TeamPower.kind == "ATTACK").one()
+        tp = db.query(TeamPower).filter(TeamPower.team_id == a["id"], TeamPower.kind == "FREEZE").one()
         tp.used = tp.owned
         db.commit()
     res = client.post(f"{API}/powers/attack", json={"target_team_id": t["id"], "idempotency_key": key()}, headers=a["headers"])
-    assert res.status_code == 409 and res.json()["detail"] == "You have no Attack power left."
+    assert res.status_code == 409 and res.json()["detail"] == "You have no Freeze power left."
 
 
 def test_joker_verified_during_pause_stops_the_clock_at_the_pause(client):

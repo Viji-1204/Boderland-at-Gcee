@@ -32,7 +32,7 @@ export function renderResults(main, ctx) {
       return;
     }
     box.innerHTML = `${note}<div class="dash-card" style="overflow-x:auto;"><table class="dtable">
-      <thead><tr><th>#</th><th>Team</th><th>Status</th><th>Time</th><th>Fouls</th><th>Checkpoints</th><th>J Q K</th><th>Atk / Def / Help</th><th>Finished</th></tr></thead>
+      <thead><tr><th>#</th><th>Team</th><th>Status</th><th>Time</th><th>Fouls</th><th>Checkpoints</th><th>J Q K</th><th>Atk / Def / Guide</th><th>Finished</th></tr></thead>
       <tbody>${data.coordinator.map((r) => `
         <tr>
           <td>${MEDALS[r.rank] || r.rank}</td>
@@ -42,7 +42,7 @@ export function renderResults(main, ctx) {
           <td class="mono" style="color:${r.foul_count ? '#dc2626' : 'inherit'}">${r.foul_count}</td>
           <td class="mono">${r.checkpoints}/${r.total_checkpoints}</td>
           <td class="mono">${['JACK', 'QUEEN', 'KING'].map((f) => (r.face_cards[f] ? f[0] : '·')).join(' ')}</td>
-          <td class="mono">${r.attacks_used} / ${r.defences_used} / ${r.help_used}</td>
+          <td class="mono">${r.attacks_used} / ${r.defences_used} / ${r.guides_used}</td>
           <td class="mono">${fmtTime(r.completed_at)}</td>
         </tr>`).join('')}</tbody>
     </table><p class="r2-hint-text">Ranking: found the Joker, then fewest fouls, then fastest time. Unfinished teams follow, by checkpoints reached.</p></div>`;

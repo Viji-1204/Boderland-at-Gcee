@@ -13,13 +13,19 @@ from app.models import (
     Admin,
     Event,
     EventStatus,
+    Foul,
+    GameEvent,
+    IdempotencyRecord,
     Location,
     LocationPhoto,
     Power,
     PowerKind,
     PowerUsage,
+    PuzzleSession,
+    Scan,
     SentenceFragment,
     Team,
+    TeamPower,
     TeamStatus,
     UsageStatus,
 )
@@ -36,10 +42,17 @@ from app.services.route_service import (
     selected_locations,
 )
 
-DEFAULT_POWER_PRICES = {
-    PowerKind.HELP: (10, 2),
-    PowerKind.ATTACK: (30, 3),
-    PowerKind.DEFENCE: (20, 3),
+DEFAULT_POWER_PRICES: dict[str, tuple[int, int]] = {  # kind -> (cost, max per team)
+    # With 100 starting points a team affords about four of these, so every
+    # choice costs something: the direct attacks and the counter that
+    # punishes them are dear; the cheap ones only slow a rival down.
+    PowerKind.GUIDE: (25, 2),
+    PowerKind.FREEZE: (30, 3),
+    PowerKind.JAM: (20, 3),
+    PowerKind.TRAP: (40, 1),
+    PowerKind.SHIELD: (20, 3),
+    PowerKind.REFLECT: (35, 2),
+    PowerKind.WARD: (25, 2),
 }
 
 
@@ -312,4 +325,53 @@ def end(db: Session, event: Event, admin: Admin) -> None:
     audit.log_admin(db, admin, event.id, "EVENT_ENDED", "Results are final")
     audit.log_game(db, event.id, None, "EVENT_ENDED", f"{event.name} has ended.")
     audit.notify_event(db, event.id, {"type": "event_status", "status": event.status})
+    audit.notify_dashboard(db, event.id)
+
+
+def restart(db: Session, event: Event, admin: Admin, refund_powers: bool = False) -> None:
+    """Throw the current run away and go back to CONFIGURED, ready to Start
+    again - for a dry run before the real event, or a false start.
+
+    Kept: checkpoints, routes, start offsets, sentences, prices, settings,
+    the admin audit log, and (unless ``refund_powers``) what each team
+    bought. Wiped: progress, fouls, scans, puzzles, timers, face cards
+    found, every power use and the game log of the run. Disqualified teams
+    stay disqualified - that was a coordinator's call, not game state.
+    """
+    ensure_status(event, EventStatus.LIVE, EventStatus.PAUSED, EventStatus.ENDED, action="restart the game")
+    teams = list(db.scalars(select(Team).where(Team.event_id == event.id)))
+    team_ids = [t.id for t in teams]
+    for model in (PowerUsage, Scan, Foul, GameEvent):
+        db.execute(delete(model).where(model.event_id == event.id))
+    if team_ids:
+        for model in (PuzzleSession, IdempotencyRecord):
+            db.execute(delete(model).where(model.team_id.in_(team_ids)))
+    starting_points = int(event_settings(event)["starting_power_points"])
+    for team in teams:
+        if team.status != TeamStatus.DISQUALIFIED:
+            team.status = TeamStatus.WAITING  # what lock() leaves them in
+        team.prev_status = None
+        team.progress = 0
+        team.foul_count = 0
+        team.started_at = None
+        team.last_checkpoint_at = None
+        team.completed_at = None
+        team.frozen_until = team.jammed_until = team.warded_until = team.guide_until = None
+        team.jack_found_at = team.queen_found_at = team.king_found_at = None
+        for tp in db.scalars(select(TeamPower).where(TeamPower.team_id == team.id)):
+            tp.used = 0
+            if refund_powers:
+                tp.owned = 0
+        if refund_powers:
+            team.power_points = starting_points
+    event.status = EventStatus.CONFIGURED
+    event.started_at = None
+    event.paused_at = None
+    event.ended_at = None
+    db.flush()
+    audit.log_admin(db, admin, event.id, "EVENT_RESTARTED", f"Run discarded -> CONFIGURED ({'powers refunded' if refund_powers else 'purchases kept, uses reset'})")
+    audit.log_game(db, event.id, None, "EVENT_RESTARTED", f"{event.name} was reset by the coordinators - ready to start again.")
+    audit.notify_event(db, event.id, {"type": "event_status", "status": event.status})
+    for team in teams:
+        audit.notify_team(db, team.id, {"type": "state"})
     audit.notify_dashboard(db, event.id)

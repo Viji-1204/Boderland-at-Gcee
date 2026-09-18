@@ -11,7 +11,8 @@ Simplifications versus the spec's representative schema, all deliberate:
 * A freeze is a timestamp (``teams.frozen_until``), not a status. The team
   keeps its real status underneath, so being frozen while a puzzle is open
   can't lose the puzzle lock. The API reports status ``FROZEN`` while it
-  lasts.
+  lasts. A jammed radar, an active Ward and an active Guide are timestamps
+  in the same way (``jammed_until`` / ``warded_until`` / ``guide_until``).
 * A sentence fragment is "revealed" when its route position has been
   verified (``seq <= teams.progress``), so no revealed flag can drift.
 """
@@ -76,26 +77,55 @@ class FaceCard:
     ORDER = (JACK, QUEEN, KING)
 
 
-class PowerKind:
+class PowerFamily:
     HELP = "HELP"
     ATTACK = "ATTACK"
     DEFENCE = "DEFENCE"
     ALL = (HELP, ATTACK, DEFENCE)
 
 
+class PowerKind:
+    """The catalogue. Prices and limits are per event (``powers`` rows); the
+    behaviour is fixed here and in power_service.
+
+    * Help: GUIDE reveals the current target (name, exact distance and a
+      Google Maps route) for a few minutes.
+    * Attack: the target gets a response window, then FREEZE stops it
+      entirely, JAM blacks out its radar, TRAP plants a foul.
+    * Defence: SHIELD blocks one attack, REFLECT blocks it and bounces the
+      effect onto the attacker, WARD is armed in advance and auto-blocks
+      every attack while it lasts.
+    """
+
+    GUIDE = "GUIDE"
+    FREEZE = "FREEZE"
+    JAM = "JAM"
+    TRAP = "TRAP"
+    SHIELD = "SHIELD"
+    REFLECT = "REFLECT"
+    WARD = "WARD"
+
+    FAMILY = {
+        GUIDE: PowerFamily.HELP,
+        FREEZE: PowerFamily.ATTACK,
+        JAM: PowerFamily.ATTACK,
+        TRAP: PowerFamily.ATTACK,
+        SHIELD: PowerFamily.DEFENCE,
+        REFLECT: PowerFamily.DEFENCE,
+        WARD: PowerFamily.DEFENCE,
+    }
+    LABEL = {GUIDE: "Guide", FREEZE: "Freeze", JAM: "Jam", TRAP: "Trap", SHIELD: "Shield", REFLECT: "Reflect", WARD: "Ward"}
+    ALL = tuple(FAMILY)
+    ATTACKS = (FREEZE, JAM, TRAP)
+    RESPONSES = (SHIELD, REFLECT)  # defences used from the "under attack" prompt
+
+
 class UsageStatus:
     PENDING = "PENDING"
-    CONFIRMED = "CONFIRMED"  # attack accepted - target frozen
-    CANCELLED = "CANCELLED"  # attack blocked with Defence
-    EXPIRED = "EXPIRED"  # no response in time - target frozen
-    USED = "USED"  # a Defence / Help use, logged for the coordinator
-
-
-class HelpStatus:
-    PENDING = "PENDING"
-    ACKNOWLEDGED = "ACKNOWLEDGED"
-    RESOLVED = "RESOLVED"
-    OPEN = (PENDING, ACKNOWLEDGED)
+    CONFIRMED = "CONFIRMED"  # attack accepted - effect applied to the target
+    CANCELLED = "CANCELLED"  # attack blocked (``resolved_with`` says how)
+    EXPIRED = "EXPIRED"  # no response in time - effect applied to the target
+    USED = "USED"  # a defence / guide / ward use, logged for the coordinator
 
 
 class ScanResult:
@@ -231,6 +261,9 @@ class Team(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # this team's own start time
     last_checkpoint_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     frozen_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    jammed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # radar blacked out (JAM)
+    warded_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # attacks auto-blocked (WARD)
+    guide_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # current target revealed (GUIDE)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     jack_found_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     queen_found_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -275,7 +308,7 @@ class SentenceFragment(Base):
 
 
 class Power(Base):
-    """Per-event price list for Help / Attack / Defence."""
+    """Per-event price list, one row per PowerKind."""
 
     __tablename__ = "powers"
     __table_args__ = (UniqueConstraint("event_id", "kind", name="uq_power_event_kind"),)
@@ -304,7 +337,9 @@ class TeamPower(Base):
 
 
 class PowerUsage(Base):
-    """Every power use. For ATTACK rows, ``status`` is the attack's lifecycle."""
+    """Every power use. For attack rows, ``status`` is the attack's lifecycle
+    and ``resolved_with`` names what ended it: SHIELD / REFLECT / WARD when
+    blocked, ACCEPTED or TIMEOUT when it landed."""
 
     __tablename__ = "power_usage"
 
@@ -314,23 +349,10 @@ class PowerUsage(Base):
     team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
     target_team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(12), default=UsageStatus.PENDING, index=True)
+    resolved_with: Mapped[str | None] = mapped_column(String(12), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-
-class HelpRequest(Base):
-    __tablename__ = "help_requests"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
-    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
-    status: Mapped[str] = mapped_column(String(14), default=HelpStatus.PENDING, index=True)
-    message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    handled_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
 class Foul(Base):

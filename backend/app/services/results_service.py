@@ -9,14 +9,14 @@ from the same ranking, so they can't disagree.
 """
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.timeutil import iso
-from app.models import Event, FaceCard, PowerUsage, Team, TeamStatus
+from app.models import Event, FaceCard, PowerFamily, Team, TeamStatus
+from app.services import power_service
 
 
 def elapsed_seconds(team: Team) -> int | None:
@@ -61,9 +61,7 @@ def public_results(db: Session, event: Event) -> list[dict]:
 
 
 def coordinator_results(db: Session, event: Event) -> list[dict]:
-    usage = Counter(
-        (u.team_id, u.kind) for u in db.scalars(select(PowerUsage).where(PowerUsage.event_id == event.id))
-    )
+    usage = power_service.family_usage(db, event.id)
     rows = []
     for rank, team in enumerate(ranked_teams(db, event), start=1):
         rows.append(
@@ -79,9 +77,9 @@ def coordinator_results(db: Session, event: Event) -> list[dict]:
                 "checkpoints": team.progress,
                 "total_checkpoints": len(team.route),
                 "face_cards": {f: iso(getattr(team, f"{f.lower()}_found_at")) for f in FaceCard.ORDER},
-                "attacks_used": usage.get((team.id, "ATTACK"), 0),
-                "defences_used": usage.get((team.id, "DEFENCE"), 0),
-                "help_used": usage.get((team.id, "HELP"), 0),
+                "attacks_used": usage.get((team.id, PowerFamily.ATTACK), 0),
+                "defences_used": usage.get((team.id, PowerFamily.DEFENCE), 0),
+                "guides_used": usage.get((team.id, PowerFamily.HELP), 0),
                 "started_at": iso(team.started_at),
                 "completed_at": iso(team.completed_at),
                 "leader_name": team.leader_name,

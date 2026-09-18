@@ -1,7 +1,7 @@
 """In-process WebSocket hub (spec section 28).
 
 Channels:
-  team:{team_id}         private pushes for one team (attacks, freezes, help status)
+  team:{team_id}         private pushes for one team (attacks, freezes, jams, traps)
   event:{event_id}       everyone in the event (lifecycle changes, leaderboard ticks)
   coord:{event_id}       coordinators only (dashboard refresh hints, live log)
 

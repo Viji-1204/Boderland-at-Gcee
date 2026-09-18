@@ -1,5 +1,6 @@
-// Live control room: lifecycle, readiness, every team at a glance, help queue, live feed.
+// Live control room: lifecycle, readiness, every team at a glance, live feed.
 import { api } from '../../../shared/js/api.js';
+import { POWERS } from '../../../shared/js/copy.js';
 import { LiveChannel } from '../../../shared/js/ws.js';
 import { esc, formatClock, toast } from '../../../shared/js/ui.js';
 import { confirmModal, fmtTime, guarded, openModal, pill } from '../common.js';
@@ -8,9 +9,9 @@ const STEPS = ['DRAFT', 'CONFIGURED', 'LIVE', 'PAUSED', 'ENDED'];
 const ACTIONS = {
   DRAFT: [['lock', 'Lock configuration', 'primary', 'lock']],
   CONFIGURED: [['start', 'START ROUND 2', 'primary', 'play_arrow'], ['unlock', 'Unlock (back to draft)', '', 'lock_open']],
-  LIVE: [['pause', 'Pause game', 'warn', 'pause'], ['end', 'End game', 'danger', 'stop']],
-  PAUSED: [['resume', 'Resume game', 'primary', 'play_arrow'], ['end', 'End game', 'danger', 'stop']],
-  ENDED: [],
+  LIVE: [['pause', 'Pause game', 'warn', 'pause'], ['end', 'End game', 'danger', 'stop'], ['restart', 'Restart game', '', 'restart_alt']],
+  PAUSED: [['resume', 'Resume game', 'primary', 'play_arrow'], ['end', 'End game', 'danger', 'stop'], ['restart', 'Restart game', '', 'restart_alt']],
+  ENDED: [['restart', 'Restart game', 'primary', 'restart_alt']],
 };
 const CONFIRM = {
   lock: 'Lock the configuration? Routes, sentences and start offsets become final.',
@@ -24,6 +25,7 @@ const DONE_LABEL = { lock: 'Lock', unlock: 'Unlock', start: 'Start Round 2', pau
 const DONE = {
   lock: 'Configuration locked', unlock: 'Back to draft', start: 'Round 2 is LIVE!',
   pause: 'Game paused', resume: 'Game resumed', end: 'Game ended - results are final',
+  restart: 'Game reset - press START when you are ready',
 };
 
 export function renderDashboard(main, ctx) {
@@ -54,14 +56,21 @@ export function renderDashboard(main, ctx) {
   function teamCard(t, serverNow) {
     const pct = t.total ? Math.round((t.progress / t.total) * 100) : 0;
     const powers = t.powers || {};
-    const cls = [t.status, t.help ? 'help' : '', t.incoming_attack_expires_at ? 'attacked' : ''].join(' ');
-    const frozen = t.frozen_until ? `<span class="pill FROZEN" data-until="${t.frozen_until}">frozen</span>` : '';
+    const fx = t.effects || {};
+    const cls = [t.status, t.incoming_attack_expires_at ? 'attacked' : ''].join(' ');
+    const frozen = t.frozen_until ? `<span class="pill FROZEN" data-until="${t.frozen_until}" data-label="frozen">frozen</span>` : '';
+    const effects = [
+      fx.jammed_until ? `<span class="pill PAUSED" data-until="${fx.jammed_until}" data-label="jammed">jammed</span>` : '',
+      fx.warded_until ? `<span class="pill WAITING" data-until="${fx.warded_until}" data-label="ward">ward</span>` : '',
+      fx.guide_until ? `<span class="pill LIVE" data-until="${fx.guide_until}" data-label="guide">guide</span>` : '',
+    ].join(' ');
+    const held = Object.entries(powers).filter(([, n]) => n > 0).map(([k, n]) => `${(POWERS[k] || { en: k }).en}×${n}`).join(' · ') || 'none';
     const target = t.target ? `${t.target.seq ? `#${t.target.seq} ` : ''}${esc(t.target.code)} · ${esc(t.target.name)}` : '-';
     const btn = (action, label, klass = '') => `<button class="btn tiny ${klass}" data-act="${action}" data-id="${t.id}" data-name="${esc(t.team_name)}">${label}</button>`;
     const actions = [
       btn('foul-add', '+ Foul', 'warn'),
       t.foul_count ? btn('foul-remove', '− Foul') : '',
-      t.status === 'FROZEN' ? btn('unfreeze', 'Unfreeze', 'good') : (['ACTIVE', 'PUZZLE_LOCKED', 'FINAL'].includes(t.base_status) ? btn('freeze', 'Freeze') : ''),
+      t.status === 'FROZEN' || fx.jammed_until ? btn('unfreeze', fx.jammed_until && t.status !== 'FROZEN' ? 'Unjam' : 'Unfreeze', 'good') : (['ACTIVE', 'PUZZLE_LOCKED', 'FINAL'].includes(t.base_status) ? btn('freeze', 'Freeze') : ''),
       t.base_status === 'PUZZLE_LOCKED' ? btn('unlock-puzzle', 'Unlock puzzle') : '',
       t.base_status === 'FINAL' ? btn('verify-joker', '🃏 Verify Joker', 'good') : '',
       t.status === 'DISQUALIFIED' ? btn('reinstate', 'Reinstate') : btn('disqualify', 'DQ', 'danger'),
@@ -70,19 +79,18 @@ export function renderDashboard(main, ctx) {
       <div class="r2-team-card ${cls}">
         <div class="r2-team-head">
           <div><strong>${esc(t.team_name)}</strong><div class="r2-team-meta">${esc(t.team_code)}${t.leader_phone ? ` · ${esc(t.leader_phone)}` : ''}</div></div>
-          <div style="text-align:right;">${pill(t.status)} ${frozen}</div>
+          <div style="text-align:right;">${pill(t.status)} ${frozen} ${effects}</div>
         </div>
         <div class="r2-progress"><span style="width:${pct}%"></span></div>
         <div class="r2-kv">
           <span>Checkpoints <b>${t.progress}/${t.total}</b></span>
           <span>Fouls <b style="color:${t.foul_count ? '#dc2626' : 'inherit'}">${t.foul_count}</b></span>
-          <span>A/D/H <b>${powers.ATTACK ?? 0}/${powers.DEFENCE ?? 0}/${powers.HELP ?? 0}</b></span>
+          <span title="Powers left">Powers <b>${esc(held)}</b></span>
           ${t.puzzle_attempts ? `<span>Tries <b>${t.puzzle_attempts}</b></span>` : ''}
         </div>
         <div class="r2-kv"><span>Target: ${target}</span></div>
         ${t.start_at && Date.parse(t.start_at) > serverNow ? `<div class="r2-kv"><span>Starts at <b>${fmtTime(t.start_at)}</b> (+${t.start_offset_s}s)</span></div>` : ''}
-        ${t.help ? `<div class="r2-kv" style="color:#92400e;">🆘 Help ${esc(t.help.status.toLowerCase())}${t.help.message ? `: “${esc(t.help.message)}”` : ''}</div>` : ''}
-        ${t.incoming_attack_expires_at ? '<div class="r2-kv" style="color:#dc2626;">⚔ Under attack - answering...</div>' : ''}
+        ${t.incoming_attack ? `<div class="r2-kv" style="color:#dc2626;">⚔ Incoming ${esc((POWERS[t.incoming_attack.kind] || { en: 'attack' }).en)} - answering...</div>` : ''}
         ${t.disqualified_reason ? `<div class="r2-kv" style="color:#991b1b;">DQ: ${esc(t.disqualified_reason)}</div>` : ''}
         <div class="r2-actions">${actions}</div>
       </div>`;
@@ -111,24 +119,12 @@ export function renderDashboard(main, ctx) {
       ${readiness}
       <div class="stats-row">
         ${[['Teams', c.teams, 'group'], ['Playing', c.playing, 'directions_run'], ['On a puzzle', c.puzzle, 'extension'], ['Frozen', c.frozen, 'ac_unit'],
-           ['Joker hunt', c.final, 'playing_cards'], ['Finished', c.completed, 'emoji_events'], ['Help waiting', c.pending_help, 'sos']]
+           ['Jammed', c.jammed, 'radar'], ['Joker hunt', c.final, 'playing_cards'], ['Finished', c.completed, 'emoji_events']]
           .map(([label, n, icon]) => `<div class="stat-card"><div class="section-header" style="margin:0 0 6px;"><span class="mi">${icon}</span>${label}</div><div style="font-size:1.6rem;font-weight:800;font-family:var(--font-mono);">${n}</div></div>`).join('')}
       </div>
       <div class="r2-cols">
         <div class="r2-team-grid">${data.teams.map((t) => teamCard(t, serverNow)).join('') || '<div class="empty-state">No teams yet - add them on the Teams page.</div>'}</div>
         <div style="display:flex;flex-direction:column;gap:16px;">
-          <div class="dash-card"><div class="section-header"><span class="mi">sos</span> Help queue</div>
-            ${data.help.length ? data.help.map((h) => `
-              <div class="r2-help-item">
-                <div style="display:flex;justify-content:space-between;gap:8px;"><strong>${esc(h.team_name)}</strong>${pill(h.status)}</div>
-                ${h.message ? `<div>“${esc(h.message)}”</div>` : ''}
-                <div class="r2-hint-text">${fmtTime(h.created_at)}${h.handled_by ? ` · ${esc(h.handled_by)}` : ''}</div>
-                <div class="r2-actions" style="margin-top:6px;">
-                  ${h.status === 'PENDING' ? `<button class="btn tiny" data-help="${h.id}" data-status="ACKNOWLEDGED">On my way</button>` : ''}
-                  <button class="btn tiny good" data-help="${h.id}" data-status="RESOLVED">Resolved</button>
-                </div>
-              </div>`).join('') : '<div class="empty-state" style="padding:10px;">No open requests.</div>'}
-          </div>
           <div class="dash-card"><div class="section-header"><span class="mi">bolt</span> Live feed</div>
             <div class="r2-feed">${data.recent.map((e) => `<div><time>${fmtTime(e.at)}</time>${esc(e.message)}</div>`).join('') || '<div class="empty-state">Nothing yet.</div>'}</div>
           </div>
@@ -140,7 +136,8 @@ export function renderDashboard(main, ctx) {
   function tickTimers() {
     box.querySelectorAll('[data-until]').forEach((el) => {
       const left = (Date.parse(el.dataset.until) - api.getServerNow()) / 1000;
-      el.textContent = left > 0 ? `frozen ${formatClock(left)}` : 'thawing...';
+      const label = el.dataset.label || 'frozen';
+      el.textContent = left > 0 ? `${label} ${formatClock(left)}` : (label === 'frozen' ? 'thawing...' : `${label} over`);
     });
   }
 
@@ -160,15 +157,10 @@ export function renderDashboard(main, ctx) {
     const life = e.target.closest('[data-life]');
     if (life) {
       const action = life.dataset.life;
+      if (action === 'restart') { restartGame(); return; }
       if (!(await confirmModal(CONFIRM[action], { okLabel: DONE_LABEL[action], danger: action === 'end' }))) return;
       const res = await guarded(() => api.admin.transition(ctx.eventId, action), DONE[action]);
       if (res) { ctx.reload(); }
-      return;
-    }
-    const help = e.target.closest('[data-help]');
-    if (help) {
-      await guarded(() => api.admin.updateHelp(ctx.eventId, help.dataset.help, help.dataset.status), 'Help request updated');
-      load();
       return;
     }
     const act = e.target.closest('[data-act]');
@@ -205,6 +197,31 @@ export function renderDashboard(main, ctx) {
     }
   });
   main.querySelector('#refresh').addEventListener('click', load);
+
+  function restartGame() {
+    const points = data && data.event && data.event.settings ? data.event.settings.starting_power_points : 'their starting';
+    openModal('Restart the game?', `
+      <p style="margin:0 0 10px;">This throws the current run away and goes back to <strong>CONFIGURED</strong>, ready to press START again - for a dry run, or a false start.</p>
+      <ul class="r2-restart-list">
+        <li><strong>Kept:</strong> checkpoints, routes, start order, sentences, prices, settings, the admin audit log.</li>
+        <li><strong>Wiped:</strong> every team's progress, fouls, scans, puzzles, timers, face cards found, power uses and this run's game log.</li>
+        <li>Disqualified teams stay disqualified - use <em>Reinstate</em> on their card if needed.</li>
+      </ul>
+      <label class="r2-check" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;">
+        <input type="checkbox" name="refund" style="margin-top:3px;" />
+        <span><strong>Refund all power purchases</strong><br><span class="r2-hint-text">Every team goes back to ${esc(String(points))} points and shops again. Leave this off to keep what they bought (with every use reset).</span></span>
+      </label>
+      <p class="r2-hint-text" style="margin-top:10px;">Type <strong>RESTART</strong> to confirm.</p>
+      <input name="confirm" autocomplete="off" placeholder="RESTART" required pattern="RESTART" style="width:100%;" />`, {
+      submitLabel: 'Restart the game',
+      onSubmit: async (fd) => {
+        if (fd.get('confirm') !== 'RESTART') { toast('Type RESTART to confirm', { error: true }); return false; }
+        const res = await guarded(() => api.admin.restart(ctx.eventId, fd.get('refund') === 'on'), DONE.restart);
+        if (res) ctx.reload();
+        return Boolean(res);
+      },
+    });
+  }
 
   const channel = new LiveChannel(`/admin?event_id=${encodeURIComponent(ctx.eventId)}`, (msg) => {
     if (['dashboard', 'log', 'event_status', 'leaderboard'].includes(msg.type)) soon();

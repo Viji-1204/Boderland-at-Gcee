@@ -11,7 +11,7 @@ from app.core.exceptions import AppError, ConflictError
 from app.core.timeutil import iso
 from app.models import Admin, Event, EventStatus, Foul, Team, TeamStatus
 from app.services import audit
-from app.services.scan_service import is_frozen, team_route
+from app.services.scan_service import is_frozen, is_jammed, team_route
 
 
 def game_now(event: Event, now: datetime) -> datetime:
@@ -58,9 +58,10 @@ def freeze_team(db: Session, event: Event, team: Team, admin: Admin, seconds: in
 
 
 def unfreeze_team(db: Session, event: Event, team: Team, admin: Admin, now: datetime) -> None:
-    if not is_frozen(team, now):
+    if not is_frozen(team, now) and not is_jammed(team, now):
         raise ConflictError(f"{team.team_name} isn't frozen.")
     team.frozen_until = None
+    team.jammed_until = None  # a coordinator's "let them go" clears a jam too
     audit.log_admin(db, admin, event.id, "TEAM_UNFROZEN", None, team.id)
     audit.notify_team(db, team.id, {"type": "unfrozen"})
     audit.team_changed(db, event.id, team.id)

@@ -240,9 +240,14 @@ def list_puzzles(event_id: str, _admin: Admin = Depends(get_current_admin), db: 
 def _powers_out(db: Session, event: Event) -> list[dict]:
     prices = {p.kind: p for p in db.scalars(select(Power).where(Power.event_id == event.id))}
     return [
-        {"kind": k, "cost": prices[k].cost, "max_per_team": prices[k].max_per_team, "active": prices[k].active}
-        if k in prices
-        else {"kind": k, "cost": 0, "max_per_team": 0, "active": False}
+        {
+            "kind": k,
+            "family": PowerKind.FAMILY[k],
+            "label": PowerKind.LABEL[k],
+            "cost": prices[k].cost if k in prices else 0,
+            "max_per_team": prices[k].max_per_team if k in prices else 0,
+            "active": prices[k].active if k in prices else False,
+        }
         for k in PowerKind.ALL
     ]
 

@@ -5,7 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-PowerKindLiteral = Literal["HELP", "ATTACK", "DEFENCE"]
+PowerKindLiteral = Literal["GUIDE", "FREEZE", "JAM", "TRAP", "SHIELD", "REFLECT", "WARD"]
+AttackKindLiteral = Literal["FREEZE", "JAM", "TRAP"]
+DefenceKindLiteral = Literal["SHIELD", "REFLECT"]
 IdemKey = Field(default=None, max_length=80)
 
 
@@ -51,18 +53,20 @@ class PurchaseIn(BaseModel):
 
 
 class AttackIn(BaseModel):
+    kind: AttackKindLiteral = "FREEZE"
     target_team_id: str = Field(min_length=1, max_length=36)
     idempotency_key: str | None = IdemKey
 
 
 class DefendIn(BaseModel):
     usage_id: str = Field(min_length=1, max_length=36)
-    use_defence: bool
+    defence: DefenceKindLiteral | None = None  # None = accept the attack
     idempotency_key: str | None = IdemKey
 
 
-class HelpIn(BaseModel):
-    message: str | None = Field(default=None, max_length=500)
+class ActionIn(BaseModel):
+    """A power used on yourself (Guide, Ward): nothing to say but the retry key."""
+
     idempotency_key: str | None = IdemKey
 
 
@@ -70,6 +74,12 @@ class HelpIn(BaseModel):
 class EventCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     clone_from_event_id: str | None = None
+
+
+class RestartIn(BaseModel):
+    # True: teams get their starting points back and shop again. False: they
+    # keep what they bought, with every use reset.
+    refund_powers: bool = False
 
 
 class EventUpdateIn(BaseModel):
@@ -177,10 +187,6 @@ class FreezeIn(BaseModel):
 
 class ReasonIn(BaseModel):
     reason: str = Field(default="", max_length=300)
-
-
-class HelpUpdateIn(BaseModel):
-    status: Literal["ACKNOWLEDGED", "RESOLVED"]
 
 
 # --- admin accounts (Round 1 screen) -------------------------------------------------

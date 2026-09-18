@@ -19,8 +19,6 @@ from app.models import (
     EventStatus,
     FaceCard,
     GameEvent,
-    HelpRequest,
-    HelpStatus,
     PowerKind,
     PowerUsage,
     PuzzleSession,
@@ -31,14 +29,24 @@ from app.models import (
 )
 from app.services import power_service, results_service
 from app.services.event_settings import event_settings
-from app.services.scan_service import current_puzzle, effective_status, team_route
+from app.services.scan_service import current_puzzle, effective_status, is_guided, is_jammed, is_warded, team_route
 
 
 def _face_cards(team: Team) -> dict:
     return {face: iso(getattr(team, f"{face.lower()}_found_at")) for face in FaceCard.ORDER}
 
 
-def _powers_block(db: Session, event: Event, team: Team) -> dict:
+def _effects(team: Team, now: datetime) -> dict:
+    """The timed effects on a team, as ISO timestamps (null when not active)."""
+    return {
+        "frozen_until": iso(team.frozen_until) if effective_status(team, now) == TeamStatus.FROZEN else None,
+        "jammed_until": iso(team.jammed_until) if is_jammed(team, now) else None,
+        "warded_until": iso(team.warded_until) if is_warded(team, now) else None,
+        "guide_until": iso(team.guide_until) if is_guided(team, now) else None,
+    }
+
+
+def _powers_block(db: Session, event: Event, team: Team, now: datetime) -> dict:
     inv = power_service.inventory(db, team.id)
     prices = {p.kind: p for p in power_service.catalog(db, event.id)}
     kinds = []
@@ -48,6 +56,8 @@ def _powers_block(db: Session, event: Event, team: Team) -> dict:
         kinds.append(
             {
                 "kind": kind,
+                "family": PowerKind.FAMILY[kind],
+                "label": PowerKind.LABEL[kind],
                 "cost": price.cost if price else None,
                 "max_per_team": price.max_per_team if price else 0,
                 "available": bool(price and price.active),
@@ -56,7 +66,7 @@ def _powers_block(db: Session, event: Event, team: Team) -> dict:
                 "remaining": tp.remaining if tp else 0,
             }
         )
-    return {"purchase_open": power_service.purchase_open(event), "items": kinds}
+    return {"purchase_open": power_service.purchase_open(event), "items": kinds, "effects": _effects(team, now)}
 
 
 def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
@@ -85,18 +95,15 @@ def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
 
     incoming = power_service.pending_attack_on(db, team.id)
     outgoing = [
-        {"usage_id": u.id, "target_name": name, "status": u.status, "expires_at": iso(u.expires_at), "created_at": iso(u.created_at)}
+        {"usage_id": u.id, "kind": u.kind, "target_name": name, "status": u.status, "resolved_with": u.resolved_with, "expires_at": iso(u.expires_at), "created_at": iso(u.created_at)}
         for u, name in db.execute(
             select(PowerUsage, Team.team_name)
             .join(Team, Team.id == PowerUsage.target_team_id)
-            .where(PowerUsage.team_id == team.id, PowerUsage.kind == PowerKind.ATTACK)
+            .where(PowerUsage.team_id == team.id, PowerUsage.kind.in_(PowerKind.ATTACKS))
             .order_by(PowerUsage.created_at.desc())
             .limit(5)
         )
     ]
-    help_req = db.scalar(
-        select(HelpRequest).where(HelpRequest.team_id == team.id).order_by(HelpRequest.created_at.desc()).limit(1)
-    )
 
     elapsed = None
     if team.completed_at and team.started_at:
@@ -115,6 +122,9 @@ def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
                 "radar_near_radius_m": settings["radar_near_radius_m"],
                 "attack_response_window_s": settings["attack_response_window_s"],
                 "freeze_duration_s": settings["freeze_duration_s"],
+                "jam_duration_s": settings["jam_duration_s"],
+                "ward_duration_s": settings["ward_duration_s"],
+                "guide_duration_s": settings["guide_duration_s"],
                 "geofence_mode": settings["geofence_mode"],
             },
         },
@@ -131,6 +141,9 @@ def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
             "total_checkpoints": total,
             "start_at": iso(team.started_at),
             "frozen_until": iso(team.frozen_until) if status == TeamStatus.FROZEN else None,
+            "jammed_until": iso(team.jammed_until) if is_jammed(team, now) else None,
+            "warded_until": iso(team.warded_until) if is_warded(team, now) else None,
+            "guide_until": iso(team.guide_until) if is_guided(team, now) else None,
             "completed_at": iso(team.completed_at),
             "elapsed_s": elapsed,
         },
@@ -139,16 +152,13 @@ def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
         "fragments": fragments,
         "fragments_total": total,
         "puzzle": current_puzzle(db, event, team, now),
-        "powers": _powers_block(db, event, team),
+        "powers": _powers_block(db, event, team, now),
         "incoming_attack": (
-            {"usage_id": incoming.id, "expires_at": iso(incoming.expires_at)}
+            {"usage_id": incoming.id, "kind": incoming.kind, "effect": power_service.attack_effect_text(event, incoming.kind), "expires_at": iso(incoming.expires_at)}
             if incoming is not None and incoming.expires_at and incoming.expires_at > now
             else None
         ),
         "outgoing_attacks": outgoing,
-        "help": (
-            {"id": help_req.id, "status": help_req.status, "created_at": iso(help_req.created_at)} if help_req else None
-        ),
         "result": None,
     }
     if event.status == EventStatus.ENDED:
@@ -198,20 +208,12 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
     """Everything, for coordinators only."""
     teams = list(db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.team_name)))
     team_ids = [t.id for t in teams]
-    open_help = {
-        h.team_id: h
-        for h in db.scalars(
-            select(HelpRequest)
-            .where(HelpRequest.event_id == event.id, HelpRequest.status.in_(HelpStatus.OPEN))
-            .order_by(HelpRequest.created_at)
-        )
-    }
     pending_attacks = {
         u.target_team_id: u
         for u in db.scalars(
             select(PowerUsage).where(
                 PowerUsage.event_id == event.id,
-                PowerUsage.kind == PowerKind.ATTACK,
+                PowerUsage.kind.in_(PowerKind.ATTACKS),
                 PowerUsage.status == UsageStatus.PENDING,
             )
         )
@@ -230,7 +232,7 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
         powers_left[tid] = {k: v.remaining for k, v in power_service.inventory(db, tid).items()}
 
     rows = []
-    counts = {"teams": len(teams), "playing": 0, "frozen": 0, "puzzle": 0, "final": 0, "completed": 0, "disqualified": 0}
+    counts = {"teams": len(teams), "playing": 0, "frozen": 0, "jammed": 0, "puzzle": 0, "final": 0, "completed": 0, "disqualified": 0}
     for t in teams:
         status = effective_status(t, now)
         route = team_route(t)
@@ -246,6 +248,8 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
 
         if status == TeamStatus.FROZEN:
             counts["frozen"] += 1
+        if t.status in TeamStatus.PLAYING and is_jammed(t, now):
+            counts["jammed"] += 1
         if t.status in TeamStatus.PLAYING:
             counts["playing"] += 1
         if t.status == TeamStatus.PUZZLE_LOCKED:
@@ -257,7 +261,6 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
         if t.status == TeamStatus.DISQUALIFIED:
             counts["disqualified"] += 1
 
-        help_req = open_help.get(t.id)
         attack = pending_attacks.get(t.id)
         rows.append(
             {
@@ -278,31 +281,19 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
                 "start_at": iso(t.started_at),
                 "start_offset_s": t.start_offset_s,
                 "frozen_until": iso(t.frozen_until) if status == TeamStatus.FROZEN else None,
+                "effects": _effects(t, now),
                 "completed_at": iso(t.completed_at),
                 "puzzle_attempts": attempts.get(t.id, 0),
-                "help": {"id": help_req.id, "status": help_req.status, "message": help_req.message, "created_at": iso(help_req.created_at)} if help_req else None,
+                "incoming_attack": {"kind": attack.kind, "expires_at": iso(attack.expires_at)} if attack else None,
                 "incoming_attack_expires_at": iso(attack.expires_at) if attack else None,
                 "disqualified_reason": t.disqualified_reason,
             }
         )
 
-    help_queue = [
-        {
-            "id": h.id,
-            "team_id": h.team_id,
-            "team_name": next((t.team_name for t in teams if t.id == h.team_id), "?"),
-            "status": h.status,
-            "message": h.message,
-            "created_at": iso(h.created_at),
-            "handled_by": h.handled_by,
-        }
-        for h in open_help.values()
-    ]
-    counts["pending_help"] = len(help_queue)
     recent = [
         {"kind": e.kind, "message": e.message, "team_id": e.team_id, "at": iso(e.created_at)}
         for e in db.scalars(
             select(GameEvent).where(GameEvent.event_id == event.id).order_by(GameEvent.created_at.desc()).limit(40)
         )
     ]
-    return {"server_now": iso(now), "counts": counts, "teams": rows, "help": help_queue, "recent": recent}
+    return {"server_now": iso(now), "counts": counts, "teams": rows, "recent": recent}

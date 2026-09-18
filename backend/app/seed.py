@@ -121,7 +121,7 @@ def seed_demo_event(db: Session, name: str = "Round 2 - Demo Hunt") -> Event:
         )
         db.add(team)
         db.flush()
-        for kind in PowerKind.ALL:  # one of each so attack/defence can be tried at once
+        for kind in PowerKind.ALL:  # one of each so every attack/defence can be tried at once
             db.add(TeamPower(team_id=team.id, kind=kind, owned=1, used=0))
     db.flush()
     route_service.generate_routes(db, event)

@@ -52,6 +52,21 @@ def is_frozen(team: Team, now: datetime) -> bool:
     return team.frozen_until is not None and team.frozen_until > now
 
 
+def is_jammed(team: Team, now: datetime) -> bool:
+    """Radar blacked out by a JAM attack; scanning and puzzles still work."""
+    return team.jammed_until is not None and team.jammed_until > now
+
+
+def is_warded(team: Team, now: datetime) -> bool:
+    """A WARD is up: attacks are blocked without a prompt."""
+    return team.warded_until is not None and team.warded_until > now
+
+
+def is_guided(team: Team, now: datetime) -> bool:
+    """A GUIDE is active: the current target is revealed on the radar."""
+    return team.guide_until is not None and team.guide_until > now
+
+
 def effective_status(team: Team, now: datetime) -> str:
     if team.status in TeamStatus.PLAYING and is_frozen(team, now):
         return TeamStatus.FROZEN
@@ -234,6 +249,7 @@ def _valid_scan(db, event, team, loc, route, now, base, record, flag, dist) -> d
     seq = stop.seq
     team.progress += 1
     team.last_checkpoint_at = now
+    team.guide_until = None  # the Guide showed the way to this checkpoint; the next one is hidden again
 
     fragment = db.scalar(select(SentenceFragment).where(SentenceFragment.team_id == team.id, SentenceFragment.seq == seq))
 
@@ -403,8 +419,14 @@ def radar(
     Distances are rounded, the exact figure is hidden inside the "near"
     radius, and calls are throttled, which makes triangulating a target from
     a sofa much harder.
+
+    The one exception is a paid-for Guide: while it lasts, the answer also
+    carries the current target's name and exact position, so the app can
+    show a Google Maps route. A jammed radar shows nothing - unless a Guide
+    is active, which cuts through the jam.
     """
     settings = event_settings(event)
+    guided = is_guided(team, now)
 
     def locked(reason: str, **extra) -> dict:
         return {"locked": True, "reason": reason, **extra}
@@ -424,9 +446,11 @@ def radar(
     if team.started_at is not None and now < team.started_at:
         return locked("Your start time hasn't arrived yet.", start_at=iso(team.started_at))
     if is_frozen(team, now):
-        return locked("FROZEN - your radar is jammed until the timer runs out.", frozen_until=iso(team.frozen_until))
+        return locked("FROZEN - your radar is off until the timer runs out.", frozen_until=iso(team.frozen_until))
     if team.status == TeamStatus.PUZZLE_LOCKED:
         return locked("Solve the checkpoint puzzle to unlock the radar.")
+    if is_jammed(team, now) and not guided:
+        return locked("JAMMED - a rival scrambled your radar. Keep moving, or use a Guide.", jammed_until=iso(team.jammed_until), jammed=True)
 
     route = team_route(team)
     if team.status == TeamStatus.FINAL:
@@ -434,19 +458,30 @@ def radar(
             return locked("Head to the coordinators' bench to find the Joker.")
         target = (event.final_latitude, event.final_longitude)
         label, final = f"Final destination: {event.final_location_name}", True
+        target_name = event.final_location_name
     else:
         if team.progress >= len(route):  # defensive: no usable route (never a 500)
             return locked("Your route isn't set up - please see a coordinator.")
         loc = route[team.progress].location
         target = (loc.latitude, loc.longitude)
         label, final = f"Checkpoint {team.progress + 1} of {len(route)}", False
+        target_name = loc.name
 
-    base = {"locked": False, "target_label": label, "is_final": final, "near_radius_m": settings["radar_near_radius_m"]}
+    base = {"locked": False, "target_label": label, "is_final": final, "near_radius_m": settings["radar_near_radius_m"], "guided": guided, "guide_until": iso(team.guide_until) if guided else None}
+    if guided:
+        # The Guide: the target itself, plus a walking route in Google Maps
+        # (a plain link, no API key; the phone's Maps app opens it).
+        base["target"] = {
+            "name": target_name if not final else event.final_location_name,
+            "latitude": target[0],
+            "longitude": target[1],
+            "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={target[0]:.6f},{target[1]:.6f}&travelmode=walking",
+        }
     if lat is None or lng is None or not valid_coordinate(lat, lng):
         return {**base, "needs_location": True, "reason": "Turn on location to use the radar."}
 
     cache_key = f"{team.id}:{team.progress}:{team.status}"
-    if _radar_limiter.check(team.id) > 0 and cache_key in _radar_cache:
+    if not guided and _radar_limiter.check(team.id) > 0 and cache_key in _radar_cache:
         return {**_radar_cache[cache_key], "throttled": True}
 
     distance, bearing = distance_and_bearing(lat, lng, target[0], target[1])
@@ -456,12 +491,15 @@ def radar(
         **base,
         "needs_location": False,
         "near": near,
-        "distance_m": None if near else int(round(distance / step) * step),
-        "bearing_deg": int(round(bearing / 5.0) * 5) % 360,
+        # Guided: the exact figures. Otherwise rounded, and hidden once near.
+        "distance_m": int(round(distance)) if guided else (None if near else int(round(distance / step) * step)),
+        "bearing_deg": int(round(bearing)) % 360 if guided else int(round(bearing / 5.0) * 5) % 360,
         "proximity": _proximity_text(distance, near, final),
         "accuracy_m": round(float(accuracy), 1) if accuracy is not None else None,
         "at": time.time(),
     }
+    if guided:
+        return result
     if len(_radar_cache) > 5000:
         _radar_cache.clear()
     _radar_cache[cache_key] = result

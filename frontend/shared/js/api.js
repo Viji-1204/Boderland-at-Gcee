@@ -231,9 +231,12 @@ export const api = {
     results: () => apiFetch('/results/public', T),
     targets: () => apiFetch('/powers/targets', T),
     purchase: (kind, quantity = 1) => apiFetch('/powers/purchase', { ...T, method: 'POST', body: { kind, quantity, idempotency_key: newIdempotencyKey('buy') }, retries: 1 }),
-    attack: (target_team_id) => apiFetch('/powers/attack', { ...T, method: 'POST', body: { target_team_id, idempotency_key: newIdempotencyKey('atk') }, retries: 1 }),
-    defend: (usage_id, use_defence) => apiFetch('/powers/defend', { ...T, method: 'POST', body: { usage_id, use_defence, idempotency_key: newIdempotencyKey('def') }, retries: 1 }),
-    help: (message) => apiFetch('/powers/help', { ...T, method: 'POST', body: { message, idempotency_key: newIdempotencyKey('help') }, retries: 1 }),
+    // kind: FREEZE | JAM | TRAP
+    attack: (kind, target_team_id) => apiFetch('/powers/attack', { ...T, method: 'POST', body: { kind, target_team_id, idempotency_key: newIdempotencyKey('atk') }, retries: 1 }),
+    // defence: SHIELD | REFLECT | null (accept the attack)
+    defend: (usage_id, defence) => apiFetch('/powers/defend', { ...T, method: 'POST', body: { usage_id, defence, idempotency_key: newIdempotencyKey('def') }, retries: 1 }),
+    guide: () => apiFetch('/powers/guide', { ...T, method: 'POST', body: { idempotency_key: newIdempotencyKey('guide') }, retries: 1 }),
+    ward: () => apiFetch('/powers/ward', { ...T, method: 'POST', body: { idempotency_key: newIdempotencyKey('ward') }, retries: 1 }),
   },
 
   admin: {
@@ -247,12 +250,12 @@ export const api = {
     deleteEvent: (id) => apiFetch(ev(id), { ...A, method: 'DELETE' }),
     readiness: (id) => apiFetch(`${ev(id)}/readiness`, A),
     transition: (id, action) => apiFetch(`${ev(id)}/${action}`, { ...A, method: 'POST' }),
+    // LIVE / PAUSED / ENDED -> CONFIGURED, discarding the run. refund: teams shop again from scratch.
+    restart: (id, refund_powers = false) => apiFetch(`${ev(id)}/restart`, { ...A, method: 'POST', body: { refund_powers } }),
 
     dashboard: (id) => apiFetch(`${ev(id)}/dashboard`, A),
     leaderboard: (id) => apiFetch(`${ev(id)}/leaderboard`, A),
     teamAction: (id, teamId, action, body) => apiFetch(`${ev(id)}/teams/${teamId}/${action}`, { ...A, method: 'POST', body: body || {} }),
-    help: (id) => apiFetch(`${ev(id)}/help`, A),
-    updateHelp: (id, helpId, status) => apiFetch(`${ev(id)}/help/${helpId}`, { ...A, method: 'POST', body: { status } }),
     logs: (id, log = 'game', limit = 300) => apiFetch(`${ev(id)}/logs?log=${log}&limit=${limit}`, A),
     results: (id) => apiFetch(`${ev(id)}/results`, A),
     exportResults: (id) => apiDownload(`${ev(id)}/results/export`, { fallbackName: 'round2-results.xlsx' }),

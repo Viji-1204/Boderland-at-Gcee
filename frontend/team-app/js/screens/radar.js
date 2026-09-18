@@ -2,6 +2,10 @@
 // position; the server answers with a rounded distance and bearing to the
 // current target only - never its name or coordinates. With a compass the
 // needle turns with the phone; without one, the dial is north-up.
+//
+// Two powers change the picture: a Guide (the server also sends the target's
+// name and position, shown here with a Google Maps walking route) and a
+// rival's Jam (the dial goes dark until the timer runs out).
 import { api } from '../../../shared/js/api.js';
 import { HEADERS } from '../../../shared/js/copy.js';
 import { glyphSVG, needleSVG } from '../../../shared/js/suit-icons.js';
@@ -23,6 +27,12 @@ export function renderRadar(root, navigate) {
         <div class="r2-distance" id="distance">--</div>
         <div class="r2-proximity" id="proximity">Starting the radar...</div>
         <div class="status-note" id="note"></div>
+        <div class="r2-guide" id="guide" hidden>
+          <div class="r2-eyebrow">GUIDE · ends in <span id="guide-left">--:--</span></div>
+          <div class="r2-guide-name" id="guide-name"></div>
+          <div class="r2-guide-meta" id="guide-meta"></div>
+          <a class="cta-btn" id="guide-maps" href="#" target="_blank" rel="noopener">${glyphSVG('map', { size: 18, stroke: 2 })} OPEN IN GOOGLE MAPS</a>
+        </div>
         <div style="display:grid;gap:10px;width:100%;max-width:340px;">
           <button class="cta-btn" id="locate-btn" type="button" hidden>ALLOW LOCATION</button>
           <button class="cta-btn ghost" id="compass-btn" type="button" hidden>ENABLE COMPASS</button>
@@ -45,6 +55,11 @@ export function renderRadar(root, navigate) {
   const labelEl = $('#target-label');
   const locateBtn = $('#locate-btn');
   const compassBtn = $('#compass-btn');
+  const guideEl = $('#guide');
+  const guideLeft = $('#guide-left');
+  const guideName = $('#guide-name');
+  const guideMeta = $('#guide-meta');
+  const guideMaps = $('#guide-maps');
   $('#scan-btn').addEventListener('click', () => navigate('#/scan'));
 
   let pos = null;
@@ -62,21 +77,39 @@ export function renderRadar(root, navigate) {
     needle.style.transform = `rotate(${(last.bearing_deg - h + 360) % 360}deg)`;
   }
 
+  function guideClock() {
+    if (!last || !last.guided || !last.guide_until) return;
+    const left = (Date.parse(last.guide_until) - api.getServerNow()) / 1000;
+    guideLeft.textContent = left > 0 ? formatClock(left) : '00:00';
+    if (left <= 0) poll();
+  }
+
   function render() {
     const r = last;
     if (!r) return;
+    const guided = Boolean(r.guided && r.target && !r.locked);
     dial.classList.toggle('locked', Boolean(r.locked || r.needs_location));
     dial.classList.toggle('near', Boolean(r.near));
+    dial.classList.toggle('jammed', Boolean(r.locked && r.jammed));
+    dial.classList.toggle('guided', guided);
     lock.hidden = !(r.locked || r.needs_location);
     needle.hidden = Boolean(r.locked || r.needs_location);
-    labelEl.textContent = r.target_label || 'Radar';
+    labelEl.textContent = guided ? `GUIDE · ${r.target_label || ''}` : (r.target_label || 'Radar');
     proximityEl.classList.toggle('near', Boolean(r.near));
     locateBtn.hidden = !r.needs_location;
+    guideEl.hidden = !guided;
+    if (guided) {
+      guideName.textContent = r.target.name || 'Your next checkpoint';
+      guideMeta.textContent = `${r.target.latitude.toFixed(5)}, ${r.target.longitude.toFixed(5)}` + (r.needs_location ? '' : ` · ${r.distance_m} m · bearing ${r.bearing_deg}°`);
+      guideMaps.href = r.target.maps_url;
+      guideClock();
+    }
 
     if (r.locked) {
       distanceEl.textContent = '--';
       proximityEl.textContent = r.reason;
-      noteEl.textContent = r.frozen_until ? `Unfreezes in ${formatClock((Date.parse(r.frozen_until) - api.getServerNow()) / 1000)}` : '';
+      const until = r.frozen_until || r.jammed_until;
+      noteEl.textContent = until ? `${r.jammed ? 'Radar back' : 'Unfreezes'} in ${formatClock((Date.parse(until) - api.getServerNow()) / 1000)}` : '';
       return;
     }
     if (r.needs_location) {
@@ -85,8 +118,8 @@ export function renderRadar(root, navigate) {
       noteEl.textContent = window.isSecureContext ? '' : 'Location needs a secure (https://) link - or localhost when testing.';
       return;
     }
-    distanceEl.innerHTML = r.near ? 'HERE' : `${r.distance_m}<small>m</small>`;
-    proximityEl.textContent = r.proximity;
+    distanceEl.innerHTML = r.near && !guided ? 'HERE' : `${r.distance_m}<small>m</small>`;
+    proximityEl.textContent = guided && !r.near ? `Exact: ${r.distance_m} m, ${r.bearing_deg}° - or follow the map` : r.proximity;
     const acc = pos && pos.accuracy ? `GPS ±${Math.round(pos.accuracy)} m` : '';
     noteEl.textContent = [acc, heading == null ? 'No compass: the top of the dial is North' : ''].filter(Boolean).join(' · ');
     applyRotation();
@@ -157,12 +190,14 @@ export function renderRadar(root, navigate) {
   startGps();
   poll();
   pollTimer = setInterval(poll, 3000);
-  const unsubscribe = onState(() => poll()); // puzzle solved / frozen / unfrozen -> re-check at once
+  const clockTimer = setInterval(() => { guideClock(); if (last && last.locked) render(); }, 1000);
+  const unsubscribe = onState(() => poll()); // puzzle solved / frozen / jammed / guided -> re-check at once
 
   return () => {
     stopped = true;
     unsubscribe();
     clearInterval(pollTimer);
+    clearInterval(clockTimer);
     if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
     window.removeEventListener('deviceorientationabsolute', onOrientation, true);
     window.removeEventListener('deviceorientation', onOrientation, true);

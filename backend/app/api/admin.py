@@ -19,12 +19,10 @@ from app.models import (
     Event,
     EventStatus,
     GameEvent,
-    HelpRequest,
-    HelpStatus,
     Location,
     Team,
 )
-from app.schemas.schemas import EventCreateIn, EventUpdateIn, FoulIn, FreezeIn, HelpUpdateIn, ReasonIn
+from app.schemas.schemas import EventCreateIn, EventUpdateIn, FoulIn, FreezeIn, ReasonIn, RestartIn
 from app.services import admin_service, event_service, export_service, power_service, results_service, state_service
 from app.services.event_settings import event_settings
 
@@ -142,6 +140,13 @@ def end(event_id: str, admin: Admin = Depends(get_current_admin), db: Session = 
     return _transition(db, event_id, admin, event_service.end)
 
 
+@router.post("/events/{event_id}/restart")
+def restart(event_id: str, payload: RestartIn | None = None, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """LIVE / PAUSED / ENDED -> CONFIGURED: discard the run, keep the setup."""
+    refund = bool(payload and payload.refund_powers)
+    return _transition(db, event_id, admin, lambda d, e, a: event_service.restart(d, e, a, refund))
+
+
 # ---------------------------------------------------------------------------
 # Live monitoring
 # ---------------------------------------------------------------------------
@@ -214,45 +219,6 @@ def disqualify(event_id: str, team_id: str, payload: ReasonIn, admin: Admin = De
 @router.post("/events/{event_id}/teams/{team_id}/reinstate")
 def reinstate(event_id: str, team_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
     return _team_action(db, event_id, team_id, lambda e, t: admin_service.reinstate(db, e, t, admin))
-
-
-# ---------------------------------------------------------------------------
-# Help queue
-# ---------------------------------------------------------------------------
-
-
-@router.get("/events/{event_id}/help")
-def help_queue(event_id: str, _admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    names = dict(db.execute(select(Team.id, Team.team_name).where(Team.event_id == event.id)).all())
-    rows = db.scalars(select(HelpRequest).where(HelpRequest.event_id == event.id).order_by(HelpRequest.created_at.desc()).limit(200))
-    out = [
-        {
-            "id": h.id,
-            "team_id": h.team_id,
-            "team_name": names.get(h.team_id, "?"),
-            "status": h.status,
-            "message": h.message,
-            "created_at": iso(h.created_at),
-            "acknowledged_at": iso(h.acknowledged_at),
-            "resolved_at": iso(h.resolved_at),
-            "handled_by": h.handled_by,
-        }
-        for h in rows
-    ]
-    out.sort(key=lambda r: (r["status"] == HelpStatus.RESOLVED, r["created_at"] or ""))
-    return out
-
-
-@router.post("/events/{event_id}/help/{help_id}")
-def update_help(event_id: str, help_id: str, payload: HelpUpdateIn, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    req = db.get(HelpRequest, help_id)
-    if req is None or req.event_id != event.id:
-        raise NotFoundError("Help request not found.")
-    power_service.update_help(db, event, req, payload.status, admin.username, utcnow())
-    db.commit()
-    return {"ok": True, "id": req.id, "status": req.status}
 
 
 # ---------------------------------------------------------------------------

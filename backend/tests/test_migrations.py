@@ -60,8 +60,18 @@ def test_0004_carries_face_cards_onto_existing_routes(monkeypatch):
         ))
         for seq, code in enumerate(("L02", "L01", "L03"), start=1):
             conn.execute(text(f"INSERT INTO route_stops (id, team_id, location_id, seq) VALUES ('S{seq}', 'T', '{code}', {seq})"))
+        # Old-style powers: one price row and a bought/used Attack, for 0005 to rename.
+        conn.execute(text("INSERT INTO powers (id, event_id, kind, cost, max_per_team, active) VALUES ('P1', 'E', 'ATTACK', 30, 3, 1)"))
+        conn.execute(text("INSERT INTO team_powers (id, team_id, kind, owned, used) VALUES ('TP1', 'T', 'ATTACK', 2, 1)"))
+        conn.execute(text("INSERT INTO power_usage (id, event_id, kind, team_id, status, created_at) VALUES ('U1', 'E', 'ATTACK', 'T', 'CANCELLED', '2026-01-01')"))
     command.upgrade(alembic_config(), "head")
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT seq, face_card FROM route_stops ORDER BY seq")).all()
         assert rows == [(1, None), (2, "JACK"), (3, "KING")]
         assert "face_card" not in {c["name"] for c in inspect(engine).get_columns("locations")}
+        # 0005: kinds renamed, the blocked attack remembers its Shield, new kinds priced.
+        assert conn.execute(text("SELECT kind, owned, used FROM team_powers")).all() == [("FREEZE", 2, 1)]
+        assert conn.execute(text("SELECT kind, resolved_with FROM power_usage")).all() == [("FREEZE", "SHIELD")]
+        prices = dict(conn.execute(text("SELECT kind, cost FROM powers ORDER BY kind")).all())
+        assert prices == {"FREEZE": 30, "JAM": 20, "REFLECT": 35, "TRAP": 40, "WARD": 25}
+        assert "help_requests" not in inspect(engine).get_table_names()

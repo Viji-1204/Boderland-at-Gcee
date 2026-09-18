@@ -1,17 +1,22 @@
 // Event setup: settings, final destination, power prices. The checkpoints
 // themselves (GPS points, photos) are in Setup Routes.
 import { api } from '../../../shared/js/api.js';
+import { POWER_FAMILIES, POWERS, powerDesc } from '../../../shared/js/copy.js';
 import { esc, toast } from '../../../shared/js/ui.js';
 import { guarded, pill } from '../common.js';
 
 const SETTING_FIELDS = [
   ['radar_near_radius_m', 'Radar "goal is near" radius (m)', 'number'],
-  ['freeze_duration_s', 'Freeze duration (s)', 'number'],
   ['attack_response_window_s', 'Attack response window (s)', 'number'],
+  ['freeze_duration_s', 'Freeze: how long a team is frozen (s)', 'number'],
+  ['jam_duration_s', 'Jam: how long a radar is jammed (s)', 'number'],
+  ['ward_duration_s', 'Ward: how long it protects (s)', 'number'],
+  ['guide_duration_s', 'Guide: how long the target is shown (s)', 'number'],
   ['staggered_start_offset_s', 'Stagger for shared starts (s)', 'number'],
   ['starting_power_points', 'Starting power points', 'number'],
   ['puzzle_cooldown_s', 'Puzzle retry cooldown (s)', 'number'],
 ];
+const FAMILY_ORDER = ['HELP', 'ATTACK', 'DEFENCE'];
 
 function myPosition() {
   return new Promise((resolve, reject) => {
@@ -67,7 +72,7 @@ export function renderSetup(main, ctx) {
             <select name="geofence_mode">
               ${['off', 'warn', 'block'].map((m) => `<option value="${m}" ${s.geofence_mode === m ? 'selected' : ''}>${m}</option>`).join('')}
             </select></label>
-          <label>Attacks on frozen teams
+          <label>Freeze a frozen team / jam a jammed radar
             <select name="allow_attack_frozen">
               <option value="false" ${!s.allow_attack_frozen ? 'selected' : ''}>Blocked (default)</option>
               <option value="true" ${s.allow_attack_frozen ? 'selected' : ''}>Allowed (stacking)</option>
@@ -91,13 +96,17 @@ export function renderSetup(main, ctx) {
       </div>
 
       <div class="dash-card">
-        <div class="section-header"><span class="mi">bolt</span> Power prices</div>
+        <div class="section-header"><span class="mi">bolt</span> Powers - prices and limits</div>
+        <p class="r2-hint-text" style="margin:0 0 10px;">Teams spend their starting points (${s.starting_power_points}) in the shop before the start. Durations are set above.
+          <strong>Help</strong>: for the team itself. <strong>Attack</strong>: the rival gets ${s.attack_response_window_s}s to Shield or Reflect it. <strong>Defence</strong>: Shield/Reflect answer an attack; a Ward is raised in advance.</p>
         <form id="powers-form">
           <table class="dtable">
-            <thead><tr><th>Power</th><th>Cost (points)</th><th>Max per team</th><th>Available</th></tr></thead>
-            <tbody>${powers.map((p) => `
+            <thead><tr><th>Family</th><th>Power</th><th>What it does</th><th>Cost (points)</th><th>Max per team</th><th>Available</th></tr></thead>
+            <tbody>${FAMILY_ORDER.flatMap((fam) => powers.filter((p) => p.family === fam)).map((p) => `
               <tr data-kind="${p.kind}">
-                <td><strong>${p.kind}</strong></td>
+                <td>${pill(p.family === 'ATTACK' ? 'DISQUALIFIED' : p.family === 'DEFENCE' ? 'WAITING' : 'LIVE', (POWER_FAMILIES[p.family] || { en: p.family }).en)}</td>
+                <td><strong>${esc((POWERS[p.kind] || { en: p.label }).en)}</strong><div class="r2-hint-text mono">${p.kind}</div></td>
+                <td class="r2-hint-text" style="max-width:320px;">${esc(powerDesc(p.kind, s))}</td>
                 <td><input class="r2-inline-input" data-f="cost" type="number" min="0" value="${p.cost}" /></td>
                 <td><input class="r2-inline-input" data-f="max_per_team" type="number" min="0" max="20" value="${p.max_per_team}" /></td>
                 <td><input type="checkbox" data-f="active" ${p.active ? 'checked' : ''} /></td>

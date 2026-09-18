@@ -6,6 +6,7 @@
 // from a server timestamp. A 20 s poll is the safety net if the socket dies.
 
 import { api, clearToken, getToken } from '../../shared/js/api.js';
+import { POWERS } from '../../shared/js/copy.js';
 import { LiveChannel } from '../../shared/js/ws.js';
 import { dialog, formatClock, startCountdown, toast, vibrate } from '../../shared/js/ui.js';
 import { glyphSVG } from '../../shared/js/suit-icons.js';
@@ -115,22 +116,28 @@ function onMessage(msg) {
       vibrate([220, 80, 220, 80, 420]);
       sound.attackAlarm();
       // Open the prompt from the push itself - the window is only seconds long.
-      if (state) showAttack({ usage_id: msg.usage_id, expires_at: msg.expires_at }, state);
+      if (state) showAttack({ usage_id: msg.usage_id, kind: msg.kind, expires_at: msg.expires_at }, state);
       refresh().catch(() => {});
       break;
     case 'attack_result': {
       const name = msg.target_name || 'The other team'; // toast() sets textContent - no escaping needed
-      const text = {
-        CANCELLED: `${name} blocked your attack with a Defence.`,
-        CONFIRMED: `${name} accepted - they're frozen!`,
-        EXPIRED: `${name} didn't answer in time - they're frozen!`,
-      }[msg.status];
-      if (text) toast(text, { success: msg.status !== 'CANCELLED' });
+      const power = (POWERS[msg.kind] || { en: 'attack' }).en;
+      const landed = { FREEZE: "they're frozen!", JAM: 'their radar is jammed!', TRAP: 'foul +1 for them!' }[msg.kind] || 'it landed!';
+      const text = msg.status === 'CANCELLED'
+        ? { SHIELD: `${name} blocked your ${power} with a Shield.`, REFLECT: `${name} REFLECTED your ${power} - it hit you instead!`, WARD: `${name} has a Ward up - your ${power} bounced off.` }[msg.resolved_with] || `${name} blocked your ${power}.`
+        : msg.status === 'CONFIRMED' ? `${name} accepted the ${power} - ${landed}` : `${name} didn't answer in time - ${landed}`;
+      toast(text, { success: msg.status !== 'CANCELLED', error: msg.resolved_with === 'REFLECT' });
       refresh().catch(() => {});
       break;
     }
-    case 'help':
-      toast(msg.status === 'ACKNOWLEDGED' ? 'A volunteer is on the way.' : 'Your help request was resolved.', { success: true });
+    case 'jammed':
+      vibrate([120, 60, 120]);
+      toast('Your radar has been JAMMED by a rival. You can still scan and solve puzzles.', { error: true, duration: 5000 });
+      refresh().catch(() => {});
+      break;
+    case 'trapped':
+      vibrate([120, 60, 120]);
+      toast(`You walked into a TRAP - foul +1 (now ${msg.foul_count}).`, { error: true, duration: 5000 });
       refresh().catch(() => {});
       break;
     case 'toast':
@@ -234,23 +241,32 @@ function showAttack(incoming, s) {
   hideAttack();
   attackId = incoming.usage_id;
   attackShownAt = Date.now();
-  const defence = (s.powers.items || []).find((p) => p.kind === 'DEFENCE');
-  const left = defence ? defence.remaining : 0;
-  const freeze = s.event.settings.freeze_duration_s;
+  const left = (kind) => ((s.powers.items || []).find((p) => p.kind === kind) || {}).remaining || 0;
+  const shields = left('SHIELD');
+  const reflects = left('REFLECT');
+  const kind = incoming.kind || 'FREEZE';
+  const power = (POWERS[kind] || { en: 'Attack', jp: '攻撃' });
+  const st = s.event.settings;
+  const effect = incoming.effect || {
+    FREEZE: `freezes you for ${st.freeze_duration_s}s: no radar, scanner or puzzle`,
+    JAM: `jams your radar for ${st.jam_duration_s}s (you can still scan and solve)`,
+    TRAP: 'plants a foul on your team (+1 foul)',
+  }[kind];
   attackEl = document.createElement('div');
   attackEl.className = 'r2-attack-overlay';
   attackEl.innerHTML = `
     <div class="r2-attack-card" role="alertdialog" aria-labelledby="r2-atk-title">
       <div class="r2-attack-body">
-        <div class="r2-attack-title" id="r2-atk-title">YOU'RE UNDER ATTACK</div>
-        <div class="muted" style="font-family:var(--font-body-jp);">攻撃を受けています</div>
+        <div class="r2-attack-title" id="r2-atk-title">INCOMING ${power.en.toUpperCase()}</div>
+        <div class="muted" style="font-family:var(--font-body-jp);">${power.jp}を受けています</div>
         <div class="countdown-face" id="r2-atk-clock">--:--</div>
-        <p style="font-size:.88rem;margin:0;">Use a Defence to block it, or accept a ${Math.round(freeze / 60 * 10) / 10}-minute freeze.
-        If you don't answer in time, you're frozen automatically.</p>
+        <p style="font-size:.88rem;margin:0;">A rival's <strong>${power.en}</strong> ${effect}.
+        Block it with a Shield, Reflect it back at them, or accept it. No answer in time and it lands.</p>
       </div>
       <div class="r2-attack-actions">
-        <button class="cta-btn" id="r2-defend" type="button" ${left ? '' : 'disabled'}>USE DEFENCE (${left} left)</button>
-        <button class="cta-btn ghost" id="r2-accept" type="button">ACCEPT THE FREEZE</button>
+        <button class="cta-btn" id="r2-shield" type="button" ${shields ? '' : 'disabled'}>SHIELD (${shields} left)</button>
+        <button class="cta-btn" id="r2-reflect" type="button" ${reflects ? '' : 'disabled'}>REFLECT (${reflects} left)</button>
+        <button class="cta-btn ghost" id="r2-accept" type="button">ACCEPT THE ${power.en.toUpperCase()}</button>
       </div>
     </div>`;
   document.body.appendChild(attackEl);
@@ -260,11 +276,11 @@ function showAttack(incoming, s) {
     setTimeout(() => refresh().catch(() => {}), 900);
   });
 
-  const respond = async (useDefence) => {
+  const respond = async (defence) => {
     attackEl.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     answeredAttacks.add(incoming.usage_id);
     try {
-      const res = await api.team.defend(incoming.usage_id, useDefence);
+      const res = await api.team.defend(incoming.usage_id, defence);
       toast(res.message, { success: res.status === 'CANCELLED' });
     } catch (err) {
       toast(err.message, { error: true });
@@ -272,8 +288,9 @@ function showAttack(incoming, s) {
     hideAttack();
     refresh().catch(() => {});
   };
-  attackEl.querySelector('#r2-defend').addEventListener('click', () => respond(true));
-  attackEl.querySelector('#r2-accept').addEventListener('click', () => respond(false));
+  attackEl.querySelector('#r2-shield').addEventListener('click', () => respond('SHIELD'));
+  attackEl.querySelector('#r2-reflect').addEventListener('click', () => respond('REFLECT'));
+  attackEl.querySelector('#r2-accept').addEventListener('click', () => respond(null));
 }
 
 function hideAttack() {

@@ -26,7 +26,8 @@ export function showRules() {
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+  requestAnimationFrame(() => overlay.classList.add('open')); // the overlay fades in via .open
+  const close = () => { overlay.classList.remove('open'); overlay.classList.add('closing'); setTimeout(() => overlay.remove(), 240); };
   overlay.querySelector('.rules-modal-close').addEventListener('click', close);
   overlay.querySelector('.rules-modal-dismiss-btn').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });

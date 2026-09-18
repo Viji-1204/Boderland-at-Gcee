@@ -53,11 +53,30 @@ export const EVENT_STATUS = {
   ENDED: { jp: '終了', en: 'Game over' },
 };
 
-export const POWERS = {
-  HELP: { jp: '救援', en: 'Help', desc: 'Call a volunteer to your team.' },
-  ATTACK: { jp: '攻撃', en: 'Attack', desc: 'Freeze a rival team unless they defend.' },
-  DEFENCE: { jp: '防御', en: 'Defence', desc: 'Cancel an attack on your team.' },
+// Power families and the powers in each. `desc` may use {freeze_duration_s},
+// {jam_duration_s}, {ward_duration_s}, {guide_duration_s} - filled from the
+// event's settings by powerDesc().
+export const POWER_FAMILIES = {
+  HELP: { jp: '救援', en: 'Help', blurb: 'For you. Used from here.' },
+  ATTACK: { jp: '攻撃', en: 'Attack', blurb: 'Pick a rival. They get a few seconds to block it.' },
+  DEFENCE: { jp: '防御', en: 'Defence', blurb: 'Shield and Reflect answer an attack; a Ward is raised in advance.' },
 };
+
+export const POWERS = {
+  GUIDE: { jp: '道しるべ', en: 'Guide', family: 'HELP', desc: 'Reveals your next checkpoint for {guide_duration_min} min: its name, the exact distance and a Google Maps route.' },
+  FREEZE: { jp: '凍結', en: 'Freeze', family: 'ATTACK', desc: 'Freezes a rival for {freeze_duration_s}s: no radar, scanner or puzzle.' },
+  JAM: { jp: '妨害', en: 'Jam', family: 'ATTACK', desc: "Scrambles a rival's radar for {jam_duration_s}s. They can still scan and solve." },
+  TRAP: { jp: '罠', en: 'Trap', family: 'ATTACK', desc: 'Plants a foul on a rival (+1). Fouls decide ties.' },
+  SHIELD: { jp: '盾', en: 'Shield', family: 'DEFENCE', desc: 'Blocks one incoming attack.' },
+  REFLECT: { jp: '反射', en: 'Reflect', family: 'DEFENCE', desc: 'Blocks an attack and bounces its effect back onto the attacker.' },
+  WARD: { jp: '結界', en: 'Ward', family: 'DEFENCE', desc: 'Raise it in advance: every attack is blocked automatically for {ward_duration_min} min.' },
+};
+
+/** A power's description with the event's durations filled in. */
+export function powerDesc(kind, settings = {}) {
+  const s = { ...settings, guide_duration_min: Math.round((settings.guide_duration_s || 180) / 60), ward_duration_min: Math.round((settings.ward_duration_s || 300) / 60) };
+  return (POWERS[kind] ? POWERS[kind].desc : '').replace(/\{(\w+)\}/g, (_, k) => (s[k] != null ? s[k] : '?'));
+}
 
 export const FACES = {
   JACK: { jp: 'ジャック', en: 'Jack', short: 'J' },
@@ -71,7 +90,7 @@ export const RULES = [
   { en: 'Solve the puzzle to unlock the <strong>radar</strong>. It points to your next checkpoint - but never names it.', jp: 'パズルを解くとレーダーが次の目的地を示します。' },
   { en: 'Scanning <strong>someone else\'s checkpoint</strong> is a foul. Fouls are private, but they decide ties.', jp: '他チームのQRをスキャンするとファウルになります。' },
   { en: 'Meet the <strong>Jack, Queen and King</strong> on the way. After your last checkpoint, the radar leads to the coordinators - <strong>find the Joker</strong>.', jp: 'J・Q・Kを集め、最後にジョーカーを見つけよう。' },
-  { en: '<strong>Attack</strong> freezes a rival for a while unless they use <strong>Defence</strong> in time. <strong>Help</strong> calls a volunteer.', jp: '攻撃・防御・救援の特殊能力を使いこなせ。' },
+  { en: '<strong>Attacks</strong> - Freeze, Jam or Trap - hit a rival unless they <strong>Shield</strong>, <strong>Reflect</strong> or have a <strong>Ward</strong> up. Lost? A <strong>Guide</strong> shows the exact way to your next checkpoint.', jp: '攻撃・防御・道しるべの特殊能力を使いこなせ。' },
 ];
 
 export const ERROR_JP = {

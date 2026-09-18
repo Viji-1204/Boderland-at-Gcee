@@ -3,7 +3,8 @@
 Round 2 of the Alice-in-Borderland event. Teams walk the campus on their phones:
 **scan the checkpoint QR → solve its puzzle → follow the radar to the next one →
 collect the Jack, Queen and King → find the Joker at the coordinators' bench.**
-Powers (Help / Attack / Defence) add some chaos. Coordinators run everything live
+Powers add some chaos: a Guide to your next checkpoint, three attacks (Freeze, Jam,
+Trap) and three defences (Shield, Reflect, Ward). Coordinators run everything live
 from an admin console.
 
 Built to the spec in `Round 2 Full Architecture/…/ROUND_2_FINAL_SPEC_AND_ARCHITECTURE.md`,
@@ -132,9 +133,10 @@ Chrome DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`).
 5. **Radar on a laptop.** DevTools → `⋮` → *More tools* → **Sensors** → *Location*:
    enter a custom latitude/longitude (checkpoint coordinates are in **Admin → Setup
    Routes**). The needle, distance and "GOAL IS NEAR" follow your fake position.
-6. **Attack.** In a third window, log in as another team → **Powers → Attack →**
-   pick Dragon Warriors. Dragon Warriors' phone shows **YOU'RE UNDER ATTACK** with a
-   15 s countdown. Use Defence, accept, or let it run out; the server freezes the
+6. **Attack.** In a third window, log in as another team → **Powers → Freeze**
+   (or Jam / Trap) → pick Dragon Warriors. Dragon Warriors' phone shows
+   **INCOMING FREEZE** with a 15 s countdown. Shield it, Reflect it back, accept it,
+   or let it run out; the server freezes the
    team automatically (full-screen **FROZEN** timer). Admin can **Unfreeze**.
 7. **Coordinator overrides** on each team card: +/− foul, freeze/unfreeze, unlock
    puzzle, disqualify/reinstate. Everything lands in **Logs**, with the automatic
@@ -150,7 +152,7 @@ Chrome DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`).
 
 ```powershell
 cd backend
-python -m pytest              # 91 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
+python -m pytest              # 102 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
 python full_verification.py   # plays a whole event through the real API and prints each step
 ```
 
@@ -242,6 +244,13 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
 - **Privacy:** the radar returns only a rounded distance and bearing, never the
   target's name or coordinates. The public leaderboard and results never show fouls.
   Attackers stay anonymous to their target.
+- **Powers.** *Guide* (help) reveals the current target for a few minutes: name,
+  exact distance and bearing, and a Google Maps walking route - no coordinator
+  needed. Attacks give the rival a response window: *Freeze* stops them, *Jam*
+  blacks out their radar (they can still scan), *Trap* plants a foul. Defences:
+  *Shield* blocks one attack, *Reflect* blocks it and bounces the effect onto the
+  attacker, *Ward* is raised in advance and auto-blocks everything while it lasts.
+  Prices, limits and durations are per event (Admin → Event Setup).
 - **Real-time:** WebSockets push attacks, freezes and state changes. Every phone
   re-syncs `GET /me/state` on reconnect. All countdowns run on server time.
 - **Retries are safe.** Every action carries an idempotency key, so a flaky
@@ -299,6 +308,10 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
 7. **QR codes.** Admin → QR Codes → Print, from the **public address teams will
    use**, since the codes link there. Stick each one at its checkpoint.
 8. **Dry run** with volunteers the day before. Then Dashboard → **Lock** → **Start**.
+   After the dry run (or a false start) press **Restart game** on the dashboard: it
+   wipes the run - progress, fouls, scans, puzzles, timers, power uses - and goes back
+   to CONFIGURED with routes, sentences and prices intact, ready to Start again.
+   Tick *Refund all power purchases* if teams should shop again from scratch.
 
 ### Hosting
 
@@ -330,7 +343,7 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    dry run on the actual phones and network of the venue.
 2. **HTTPS hosting** for event day (domain + Caddy, or a tunnel) and printed QR codes
    pointing at it.
-3. **Rehearse on the event server:** all 91 tests and the full-event smoke run
+3. **Rehearse on the event server:** all 102 tests and the full-event smoke run
    also pass on Postgres 16 (see *Automated checks*), and the Docker stack runs.
    Still run a dry run on the real server and network.
 4. **Scale-out (only if needed):** several API processes would need Redis for the

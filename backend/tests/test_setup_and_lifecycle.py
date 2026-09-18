@@ -11,7 +11,7 @@ from app.database import SessionLocal
 from app.models import AdminAction, GameEvent, Team
 from app.services import route_service
 from app.services.event_service import split_sentence
-from tests.helpers import clear_checkpoint, face_cards_of, get_event, get_team, route_of, scan, seed, set_team
+from tests.helpers import clear_checkpoint, face_cards_of, get_event, get_team, key, route_of, scan, seed, set_team
 
 API = "/api/v1"
 
@@ -225,3 +225,57 @@ def test_clone_event_copies_setup_with_fresh_qr_codes(client):
     assert set(old_locs) == set(new_locs)
     assert all(old_locs[c]["qr_token"] != new_locs[c]["qr_token"] for c in old_locs)
     assert all(new_locs[c]["puzzle_type"] == old_locs[c]["puzzle_type"] for c in new_locs)
+
+
+def test_restart_discards_the_run_and_keeps_the_setup(client):
+    demo = seed(client, start=True)
+    eid = demo.event_id
+    a, t = demo.teams["Dragon Warriors"], demo.teams["Border Runners"]
+    route_a = route_of(a["id"])
+    clear_checkpoint(client, a, route_a[0])  # progress, a puzzle session, a face card maybe
+    client.post(f"{API}/admin/events/{eid}/teams/{t['id']}/foul", json={"action": "add", "reason": "test"}, headers=demo.admin)
+    usage = client.post(f"{API}/powers/attack", json={"kind": "FREEZE", "target_team_id": t["id"], "idempotency_key": key()}, headers=a["headers"]).json()
+    client.post(f"{API}/powers/defend", json={"usage_id": usage["usage_id"], "defence": None, "idempotency_key": key()}, headers=t["headers"])
+    assert get_team(t["id"]).frozen_until is not None and get_team(t["id"]).foul_count == 1
+    assert client.post(f"{API}/admin/events/{eid}/restart", headers=demo.admin).status_code == 200
+
+    assert get_event(eid).status == "CONFIGURED" and get_event(eid).started_at is None
+    for team in (a, t):
+        row = get_team(team["id"])
+        assert row.status == "WAITING" and row.progress == 0 and row.foul_count == 0
+        assert row.started_at is None and row.frozen_until is None and row.jack_found_at is None
+        state = client.get(f"{API}/me/state", headers=team["headers"]).json()
+        assert state["team"]["status"] == "WAITING" and state["fragments"] == [] and state["puzzle"] is None
+        inv = {p["kind"]: p for p in state["powers"]["items"]}
+        assert inv["FREEZE"]["owned"] == 1 and inv["FREEZE"]["used"] == 0  # purchases kept, uses reset
+    assert [l.id for l in route_of(a["id"])] == [l.id for l in route_a]  # the setup survived
+    with SessionLocal() as db:
+        from app.models import PuzzleSession, Scan
+
+        assert db.scalar(select(PuzzleSession).where(PuzzleSession.team_id == a["id"])) is None
+        assert db.scalar(select(Scan).where(Scan.event_id == eid)) is None
+    log = client.get(f"{API}/admin/events/{eid}/logs", params={"log": "admin"}, headers=demo.admin).json()
+    assert "EVENT_RESTARTED" in {r["kind"] for r in log} and "FOUL_ADDED" in {r["kind"] for r in log}  # audit trail kept
+    game = client.get(f"{API}/admin/events/{eid}/logs", params={"log": "game"}, headers=demo.admin).json()
+    assert [r["kind"] for r in game] == ["EVENT_RESTARTED"]  # the run's game log is gone
+
+    # ...and it plays again from the top.
+    assert client.post(f"{API}/admin/events/{eid}/start", headers=demo.admin).status_code == 200
+    res = scan(client, a, route_a[0].qr_token).json()
+    assert res["result"] == "VALID" and res["checkpoint"] == 1
+
+
+def test_restart_can_refund_powers_and_works_after_end(client):
+    demo = seed(client, start=True)
+    eid = demo.event_id
+    team = demo.teams["Spade Squad"]
+    assert client.post(f"{API}/admin/events/{eid}/restart", json={"refund_powers": True}, headers=demo.admin).status_code == 200
+    state = client.get(f"{API}/me/state", headers=team["headers"]).json()
+    assert state["team"]["power_points"] == 100 and all(p["owned"] == 0 for p in state["powers"]["items"])
+    assert state["powers"]["purchase_open"] is True  # CONFIGURED: the shop is open again
+    client.post(f"{API}/admin/events/{eid}/start", headers=demo.admin)
+    client.post(f"{API}/admin/events/{eid}/end", headers=demo.admin)
+    assert client.post(f"{API}/admin/events/{eid}/restart", headers=demo.admin).status_code == 200  # from ENDED too
+    assert get_event(eid).status == "CONFIGURED" and get_event(eid).ended_at is None
+    client.post(f"{API}/admin/events/{eid}/unlock", headers=demo.admin)
+    assert client.post(f"{API}/admin/events/{eid}/restart", headers=demo.admin).status_code == 409  # nothing to restart in DRAFT

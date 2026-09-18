@@ -68,7 +68,7 @@ export function renderHome(root, navigate) {
       let badge = '';
       if (a.id === 'puzzle' && s.puzzle) badge = '<span class="r2-badge-dot">!</span>';
       if (a.id === 'sentence' && s.fragments.length) badge = `<span class="r2-badge-dot">${s.fragments.length}</span>`;
-      if (a.id === 'powers' && s.help && ['PENDING', 'ACKNOWLEDGED'].includes(s.help.status)) badge = '<span class="r2-badge-dot">SOS</span>';
+      if (a.id === 'radar' && s.team.guide_until) badge = '<span class="r2-badge-dot">GO</span>';
       const icon = a.img
         ? `<div class="phone-app-card-icon"><img src="${a.img}" alt="" /></div>`
         : `<div class="r2-app-icon ${a.tone}" data-suit="${a.suit}">${glyphSVG(a.glyph, { size: 34, stroke: 1.8 })}</div>`;
