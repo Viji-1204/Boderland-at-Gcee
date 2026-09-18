@@ -128,13 +128,15 @@ def test_accepted_freeze_blocks_everything(client):
 def test_jam_blacks_out_the_radar_but_not_the_scanner(client):
     demo = seed(client, start=True)
     a, t = demo.teams["Dragon Warriors"], demo.teams["Border Runners"]
+    route = route_of(t["id"])
+    clear_checkpoint(client, t, route[0])  # the start is public, so a jam can't hide it; checkpoint 2 can be
     usage = attack(client, a, t, "JAM").json()["usage_id"]
     assert defend(client, t, usage, None).json()["status"] == "CONFIRMED"
     s = state(client, t)
     assert s["team"]["status"] == "ACTIVE" and s["team"]["jammed_until"]  # not frozen
     r = radar(client, t)
     assert r["locked"] and r.get("jammed") and "JAMMED" in r["reason"]
-    assert clear_checkpoint(client, t, route_of(t["id"])[0]) is None  # scanning and solving still work
+    assert clear_checkpoint(client, t, route[1]) is None  # scanning and solving still work
     assert attack(client, demo.teams["Joker's Wild"], t, "JAM").status_code == 409  # already jammed
     assert attack(client, demo.teams["Joker's Wild"], t, "FREEZE").status_code == 200  # a different attack is fine
     set_team(t["id"], jammed_until=utcnow() - timedelta(seconds=1))
@@ -231,14 +233,15 @@ def test_guide_reveals_the_target_with_a_maps_route(client):
     demo = seed(client, start=True)
     team = demo.teams["Dragon Warriors"]
     route = route_of(team["id"])
+    clear_checkpoint(client, team, route[0])  # past the (always shown) start: checkpoint 2 is a secret
     before = radar(client, team)
     assert before["guided"] is False and "target" not in before and before["distance_m"] % 5 == 0
     res = use(client, team, "guide").json()
     assert res["guide_until"] and inventory(client, team)["GUIDE"] == 0
     assert use(client, team, "guide").status_code == 409  # already active
     r = radar(client, team)
-    assert r["guided"] is True and r["target"]["name"] == route[0].name
-    assert r["target"]["latitude"] == route[0].latitude and r["target"]["longitude"] == route[0].longitude
+    assert r["guided"] is True and r["is_start"] is False and r["target"]["name"] == route[1].name
+    assert r["target"]["latitude"] == route[1].latitude and r["target"]["longitude"] == route[1].longitude
     assert r["target"]["maps_url"].startswith("https://www.google.com/maps/dir/?api=1&destination=") and "travelmode=walking" in r["target"]["maps_url"]
     assert isinstance(r["distance_m"], int) and r["distance_m"] > 0  # exact, not rounded away
     assert state(client, team)["team"]["guide_until"] == res["guide_until"]
@@ -246,7 +249,7 @@ def test_guide_reveals_the_target_with_a_maps_route(client):
     set_team(team["id"], jammed_until=utcnow() + timedelta(minutes=5))
     assert radar(client, team)["guided"] is True
     # Scanning the checkpoint ends it: the next target is hidden again.
-    clear_checkpoint(client, team, route[0])
+    clear_checkpoint(client, team, route[1])
     assert radar(client, team)["locked"] and radar(client, team)["jammed"]  # the jam is back in force
     set_team(team["id"], jammed_until=None)
     after = radar(client, team)

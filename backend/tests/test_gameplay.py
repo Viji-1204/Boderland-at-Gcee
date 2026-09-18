@@ -228,3 +228,25 @@ def test_geofence_block_mode(client):
     assert far["result"] == "BLOCKED" and far["foul_added"] is False
     ok = scan(client, team, loc.qr_token, lat=loc.latitude, lng=loc.longitude, accuracy=10).json()
     assert ok["result"] == "VALID"
+
+
+def test_start_checkpoint_is_shown_once_the_game_is_live(client):
+    """The app sends each team to its start with a map route - the
+    volunteers don't have to. Only the start: checkpoint 2 stays secret."""
+    demo = seed(client, lock=True)
+    team = demo.teams["Dragon Warriors"]
+    route = route_of(team["id"])
+    assert client.get(f"{API}/me/state", headers=team["headers"]).json()["start"] is None  # not before the start
+    client.post(f"{API}/admin/events/{demo.event_id}/start", headers=demo.admin)
+    s = client.get(f"{API}/me/state", headers=team["headers"]).json()
+    assert s["start"]["name"] == route[0].name and s["start"]["code"] == route[0].code and s["start"]["total"] == 8
+    assert s["start"]["latitude"] == route[0].latitude and "travelmode=walking" in s["start"]["maps_url"]
+    assert s["checkpoints"][1]["name"] is None  # the rest of the route is still hidden
+    r = client.get(f"{API}/radar", params={"lat": 13.08, "lng": 80.27}, headers=team["headers"]).json()
+    assert r["is_start"] is True and r["guided"] is True and r["target"]["name"] == route[0].name and r["guide_until"] is None
+    assert r["target_label"].startswith("Starting checkpoint")
+    scan(client, team, route[0].qr_token)
+    assert client.get(f"{API}/me/state", headers=team["headers"]).json()["start"] is None  # scanned: gone
+    solve_puzzle(client, team)
+    r = client.get(f"{API}/radar", params={"lat": 13.08, "lng": 80.27}, headers=team["headers"]).json()
+    assert r["is_start"] is False and r["guided"] is False and "target" not in r  # checkpoint 2: radar only

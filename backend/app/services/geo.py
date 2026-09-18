@@ -21,6 +21,12 @@ def distance_and_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> 
     return distance, bearing
 
 
+def maps_directions_url(lat: float, lon: float) -> str:
+    """Walking directions to a point in Google Maps. A plain link - no API
+    key - that the phone's Maps app opens with live turn-by-turn guidance."""
+    return f"https://www.google.com/maps/dir/?api=1&destination={lat:.6f},{lon:.6f}&travelmode=walking"
+
+
 def valid_coordinate(lat: float | None, lon: float | None) -> bool:
     if lat is None or lon is None:
         return False

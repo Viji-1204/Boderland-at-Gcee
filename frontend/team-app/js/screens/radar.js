@@ -28,7 +28,7 @@ export function renderRadar(root, navigate) {
         <div class="r2-proximity" id="proximity">Starting the radar...</div>
         <div class="status-note" id="note"></div>
         <div class="r2-guide" id="guide" hidden>
-          <div class="r2-eyebrow">GUIDE · ends in <span id="guide-left">--:--</span></div>
+          <div class="r2-eyebrow" id="guide-head">GUIDE · ends in <span id="guide-left">--:--</span></div>
           <div class="r2-guide-name" id="guide-name"></div>
           <div class="r2-guide-meta" id="guide-meta"></div>
           <a class="cta-btn" id="guide-maps" href="#" target="_blank" rel="noopener">${glyphSVG('map', { size: 18, stroke: 2 })} OPEN IN GOOGLE MAPS</a>
@@ -56,7 +56,7 @@ export function renderRadar(root, navigate) {
   const locateBtn = $('#locate-btn');
   const compassBtn = $('#compass-btn');
   const guideEl = $('#guide');
-  const guideLeft = $('#guide-left');
+  const guideHead = $('#guide-head');
   const guideName = $('#guide-name');
   const guideMeta = $('#guide-meta');
   const guideMaps = $('#guide-maps');
@@ -80,7 +80,8 @@ export function renderRadar(root, navigate) {
   function guideClock() {
     if (!last || !last.guided || !last.guide_until) return;
     const left = (Date.parse(last.guide_until) - api.getServerNow()) / 1000;
-    guideLeft.textContent = left > 0 ? formatClock(left) : '00:00';
+    const el = guideEl.querySelector('#guide-left');
+    if (el) el.textContent = left > 0 ? formatClock(left) : '00:00';
     if (left <= 0) poll();
   }
 
@@ -94,11 +95,13 @@ export function renderRadar(root, navigate) {
     dial.classList.toggle('guided', guided);
     lock.hidden = !(r.locked || r.needs_location);
     needle.hidden = Boolean(r.locked || r.needs_location);
-    labelEl.textContent = guided ? `GUIDE · ${r.target_label || ''}` : (r.target_label || 'Radar');
+    labelEl.textContent = guided && !r.is_start ? `GUIDE · ${r.target_label || ''}` : (r.target_label || 'Radar');
     proximityEl.classList.toggle('near', Boolean(r.near));
     locateBtn.hidden = !r.needs_location;
     guideEl.hidden = !guided;
     if (guided) {
+      if (r.is_start && !r.guide_until) guideHead.textContent = 'START HERE · your first checkpoint';
+      else guideHead.innerHTML = 'GUIDE · ends in <span id="guide-left">--:--</span>';
       guideName.textContent = r.target.name || 'Your next checkpoint';
       guideMeta.textContent = `${r.target.latitude.toFixed(5)}, ${r.target.longitude.toFixed(5)}` + (r.needs_location ? '' : ` · ${r.distance_m} m · bearing ${r.bearing_deg}°`);
       guideMaps.href = r.target.maps_url;

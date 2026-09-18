@@ -34,7 +34,7 @@ from app.models import (
 )
 from app.services import audit, puzzle_service, puzzles
 from app.services.event_settings import event_settings
-from app.services.geo import distance_and_bearing, valid_coordinate
+from app.services.geo import distance_and_bearing, maps_directions_url, valid_coordinate
 
 _scan_limiter = MinInterval(0.8)
 _radar_limiter = MinInterval(1.0)
@@ -420,13 +420,15 @@ def radar(
     radius, and calls are throttled, which makes triangulating a target from
     a sofa much harder.
 
-    The one exception is a paid-for Guide: while it lasts, the answer also
-    carries the current target's name and exact position, so the app can
-    show a Google Maps route. A jammed radar shows nothing - unless a Guide
-    is active, which cuts through the jam.
+    Two exceptions carry the target's name and exact position, so the app
+    can show a Google Maps route: the starting checkpoint, until the team
+    has scanned it (it is no secret - every team is sent to its start), and
+    a paid-for Guide while it lasts. A jammed radar shows nothing - unless
+    one of those applies, which cuts through the jam.
     """
     settings = event_settings(event)
-    guided = is_guided(team, now)
+    at_start = team.progress == 0 and team.status in TeamStatus.PLAYING
+    guided = is_guided(team, now) or at_start
 
     def locked(reason: str, **extra) -> dict:
         return {"locked": True, "reason": reason, **extra}
@@ -464,18 +466,25 @@ def radar(
             return locked("Your route isn't set up - please see a coordinator.")
         loc = route[team.progress].location
         target = (loc.latitude, loc.longitude)
-        label, final = f"Checkpoint {team.progress + 1} of {len(route)}", False
+        label, final = (f"Starting checkpoint (1 of {len(route)})" if at_start else f"Checkpoint {team.progress + 1} of {len(route)}"), False
         target_name = loc.name
 
-    base = {"locked": False, "target_label": label, "is_final": final, "near_radius_m": settings["radar_near_radius_m"], "guided": guided, "guide_until": iso(team.guide_until) if guided else None}
+    base = {
+        "locked": False,
+        "target_label": label,
+        "is_final": final,
+        "is_start": at_start,
+        "near_radius_m": settings["radar_near_radius_m"],
+        "guided": guided,
+        "guide_until": iso(team.guide_until) if is_guided(team, now) else None,
+    }
     if guided:
-        # The Guide: the target itself, plus a walking route in Google Maps
-        # (a plain link, no API key; the phone's Maps app opens it).
+        # The revealed target itself, plus a walking route in Google Maps.
         base["target"] = {
             "name": target_name if not final else event.final_location_name,
             "latitude": target[0],
             "longitude": target[1],
-            "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={target[0]:.6f},{target[1]:.6f}&travelmode=walking",
+            "maps_url": maps_directions_url(target[0], target[1]),
         }
     if lat is None or lng is None or not valid_coordinate(lat, lng):
         return {**base, "needs_location": True, "reason": "Turn on location to use the radar."}

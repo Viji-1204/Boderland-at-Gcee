@@ -152,7 +152,7 @@ Chrome DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`).
 
 ```powershell
 cd backend
-python -m pytest              # 102 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
+python -m pytest              # 103 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
 python full_verification.py   # plays a whole event through the real API and prints each step
 ```
 
@@ -237,6 +237,10 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
   puzzle is open never cost a foul.
 - **Frozen, paused, ended, disqualified or not-yet-started teams can't act.**
   Staggered starts apply when teams share a starting checkpoint.
+- **The app sends teams to their start.** From the moment the game is live until a
+  team scans checkpoint 1, its home screen shows the starting checkpoint by name,
+  the live distance from the phone's GPS, and an *Open in Google Maps* walking
+  route; the radar shows the same. Every later checkpoint stays radar-only.
 - **Routes:** every team visits every selected checkpoint once, in a unique order.
   Each team is dealt its own Jack, Queen and King - three of its stops, picked at
   random when routes are generated, met in that order - so teams find them at
@@ -343,7 +347,7 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    dry run on the actual phones and network of the venue.
 2. **HTTPS hosting** for event day (domain + Caddy, or a tunnel) and printed QR codes
    pointing at it.
-3. **Rehearse on the event server:** all 102 tests and the full-event smoke run
+3. **Rehearse on the event server:** all 103 tests and the full-event smoke run
    also pass on Postgres 16 (see *Automated checks*), and the Docker stack runs.
    Still run a dry run on the real server and network.
 4. **Scale-out (only if needed):** several API processes would need Redis for the

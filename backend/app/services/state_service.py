@@ -3,7 +3,10 @@
 Privacy rules (spec sections 7, 13, 16, 17, 29):
 * a team sees only its own data;
 * a future checkpoint's name and coordinates are never sent (only
-  checkpoints already cleared are named; the current one is radar-only);
+  checkpoints already cleared are named; the current one is radar-only).
+  The one exception is the starting checkpoint: from the moment the game
+  is live until the team scans it, the app shows where it is, with a map
+  route - the app sends teams to their start, not the volunteers;
 * fouls, freezes, powers and routes never appear on the public leaderboard.
 """
 from __future__ import annotations
@@ -29,11 +32,32 @@ from app.models import (
 )
 from app.services import power_service, results_service
 from app.services.event_settings import event_settings
+from app.services.geo import maps_directions_url
 from app.services.scan_service import current_puzzle, effective_status, is_guided, is_jammed, is_warded, team_route
 
 
 def _face_cards(team: Team) -> dict:
     return {face: iso(getattr(team, f"{face.lower()}_found_at")) for face in FaceCard.ORDER}
+
+
+def _start_block(event: Event, team: Team, route: list) -> dict | None:
+    """Where the team begins, shown once the game is live and until the
+    starting checkpoint is scanned (progress 0)."""
+    if event.status not in (EventStatus.LIVE, EventStatus.PAUSED) or team.progress != 0 or not route:
+        return None
+    if team.status not in TeamStatus.PLAYING:
+        return None
+    loc = route[0].location
+    return {
+        "seq": 1,
+        "code": loc.code,
+        "name": loc.name,
+        "latitude": loc.latitude,
+        "longitude": loc.longitude,
+        "maps_url": maps_directions_url(loc.latitude, loc.longitude),
+        "start_at": iso(team.started_at),
+        "total": len(route),
+    }
 
 
 def _effects(team: Team, now: datetime) -> dict:
@@ -148,6 +172,7 @@ def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
             "elapsed_s": elapsed,
         },
         "checkpoints": checkpoints,
+        "start": _start_block(event, team, route),
         "face_cards": _face_cards(team),
         "fragments": fragments,
         "fragments_total": total,

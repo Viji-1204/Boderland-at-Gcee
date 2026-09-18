@@ -1,4 +1,8 @@
 // Dark "phone" hub from Round 1, with Round 2 apps and a glanceable status strip.
+// When the game goes live it also shows the team where to begin: the
+// starting checkpoint by name, the live distance from the phone's GPS, and a
+// Google Maps walking route - the app sends teams to their start, not the
+// volunteers.
 import { api } from '../../../shared/js/api.js';
 import { EVENT_STATUS, TEAM_STATUS } from '../../../shared/js/copy.js';
 import { glyphSVG } from '../../../shared/js/suit-icons.js';
@@ -34,7 +38,7 @@ function nextStep(s) {
     case 'ACTIVE':
       if (t.start_at && Date.parse(t.start_at) > api.getServerNow() + 1000) return { text: 'Your start time', until: t.start_at, sub: 'Teams sharing a start set off a little apart.' };
       return t.progress === 0
-        ? { text: `Scan your starting checkpoint (1 of ${n})`, sub: 'The volunteers will show you where to begin.' }
+        ? { text: `Go to your starting checkpoint (1 of ${n})`, sub: 'Follow the map below, then scan its QR code.' }
         : { text: `Follow the radar to checkpoint ${t.progress + 1} of ${n}`, sub: 'Find its QR code and scan it.' };
     case 'FINAL': return { text: 'Find the Joker!', sub: `All checkpoints cleared - the radar points to ${s.event.final_location_name || 'the coordinators'}.` };
     case 'COMPLETED': return { text: 'Joker found - you finished!', sub: t.elapsed_s != null ? `Your time: ${formatClock(t.elapsed_s)}` : '' };
@@ -47,6 +51,7 @@ export function renderHome(root, navigate) {
   root.innerHTML = `
     <div class="phone-dashboard-container">
       <div id="r2-status" class="r2-status-card"><div class="spinner" style="margin:10px auto;"></div></div>
+      <div id="r2-start"></div>
       <div class="phone-apps-view r2">
         <div class="phone-apps-grid" id="r2-apps"></div>
         <div id="r2-lobby"></div>
@@ -57,9 +62,85 @@ export function renderHome(root, navigate) {
   bindChrome(root, navigate);
 
   const statusBox = root.querySelector('#r2-status');
+  const startBox = root.querySelector('#r2-start');
   const grid = root.querySelector('#r2-apps');
   const lobby = root.querySelector('#r2-lobby');
   let stopClock = null;
+  let stopStartClock = null;
+  let watchId = null;
+  let pos = null;
+  let startTarget = null;
+
+  // Great-circle distance in metres (same maths as the server's radar).
+  function distanceM(a, b) {
+    const R = 6371000;
+    const p1 = (a.lat * Math.PI) / 180;
+    const p2 = (b.lat * Math.PI) / 180;
+    const dp = ((b.lat - a.lat) * Math.PI) / 180;
+    const dl = ((b.lng - a.lng) * Math.PI) / 180;
+    const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }
+
+  function renderDistance() {
+    const el = startBox.querySelector('#r2-start-dist');
+    if (!el || !startTarget) return;
+    if (!pos) { el.textContent = 'Finding your location...'; return; }
+    const d = distanceM(pos, startTarget);
+    const mins = Math.max(1, Math.round(d / 80)); // a brisk walk
+    el.innerHTML = d <= 25
+      ? "<strong>You're here</strong> - find the QR code and scan it"
+      : `<strong>${Math.round(d)} m</strong> away · about ${mins} min on foot · GPS ±${Math.round(pos.accuracy || 0)} m`;
+  }
+
+  function watchGps() {
+    if (watchId != null || !navigator.geolocation) return;
+    watchId = navigator.geolocation.watchPosition(
+      (p) => { pos = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }; renderDistance(); },
+      () => { const el = startBox.querySelector('#r2-start-dist'); if (el && !pos) el.textContent = 'Turn on location to see how far it is - or just open the map.'; },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 },
+    );
+  }
+
+  function stopGps() {
+    if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  function renderStart(s) {
+    const st = s.start;
+    if (stopStartClock) stopStartClock();
+    stopStartClock = null;
+    if (!st) {
+      startTarget = null;
+      startBox.innerHTML = '';
+      stopGps();
+      return;
+    }
+    startTarget = { lat: st.latitude, lng: st.longitude };
+    const waiting = st.start_at && Date.parse(st.start_at) > api.getServerNow() + 1000;
+    const paused = s.event.status === 'PAUSED';
+    startBox.innerHTML = `
+      <div class="r2-start-card">
+        <div class="r2-start-head">
+          <div class="r2-eyebrow">${waiting ? 'Your start is in <span class="mono" id="r2-start-clock">--:--</span> - head there now' : 'Start here'}</div>
+          <div class="r2-start-name">${glyphSVG('guide', { size: 22, stroke: 2 })} ${esc(st.name)}</div>
+          <div class="r2-start-sub">Checkpoint 1 of ${st.total} · ${esc(st.code)}</div>
+        </div>
+        <div class="r2-start-dist" id="r2-start-dist">Finding your location...</div>
+        <div class="r2-start-actions">
+          <a class="cta-btn r2-start-maps" href="${esc(st.maps_url)}" target="_blank" rel="noopener">${glyphSVG('map', { size: 18, stroke: 2 })} OPEN IN GOOGLE MAPS</a>
+          <button class="cta-btn ghost" type="button" id="r2-start-scan" ${waiting || paused ? 'disabled' : ''}>${paused ? 'GAME PAUSED' : waiting ? 'SCAN OPENS AT YOUR START TIME' : "I'M HERE - SCAN THE QR"}</button>
+        </div>
+        <div class="r2-start-note">Google Maps gives you live turn-by-turn directions. Once you're there, scan the checkpoint's QR code to begin.</div>
+      </div>`;
+    const scanBtn = startBox.querySelector('#r2-start-scan');
+    if (scanBtn) scanBtn.addEventListener('click', () => navigate('#/scan'));
+    const clock = startBox.querySelector('#r2-start-clock');
+    if (clock) stopStartClock = startCountdown(st.start_at, (sec) => { clock.textContent = formatClock(sec); }, () => refresh().catch(() => {}));
+    renderDistance();
+    watchGps();
+  }
 
   function renderApps(s) {
     const ended = s.event.status === 'ENDED';
@@ -125,8 +206,8 @@ export function renderHome(root, navigate) {
     lobby.innerHTML = lobbyNotes.map((n) => `<div class="r2-lobby-note">${n}</div>`).join('');
   }
 
-  const unsubscribe = onState((s) => { renderStatus(s); renderApps(s); });
+  const unsubscribe = onState((s) => { renderStatus(s); renderStart(s); renderApps(s); });
   refresh().catch((err) => { statusBox.innerHTML = `<p class="status-note error">${esc(err.message)}</p>`; });
 
-  return () => { unsubscribe(); if (stopClock) stopClock(); };
+  return () => { unsubscribe(); if (stopClock) stopClock(); if (stopStartClock) stopStartClock(); stopGps(); };
 }

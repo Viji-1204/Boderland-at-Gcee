@@ -85,7 +85,7 @@ export const FACES = {
 };
 
 export const RULES = [
-  { en: 'Your team follows its own secret route through the campus checkpoints. Start at the checkpoint the volunteers give you.', jp: '各チームは独自のルートでチェックポイントを巡ります。' },
+  { en: 'Your team follows its own secret route through the campus checkpoints. When the game starts, the app shows your <strong>starting checkpoint</strong> with a Google Maps route - go there and scan its QR.', jp: '各チームは独自のルートでチェックポイントを巡ります。開始時にアプリが最初の地点を地図で示します。' },
   { en: '<strong>Scan the QR</strong> at your checkpoint. The right one reveals a <strong>puzzle</strong> and a fragment of your secret sentence.', jp: '正しいQRをスキャンするとパズルと暗号文の断片が現れます。' },
   { en: 'Solve the puzzle to unlock the <strong>radar</strong>. It points to your next checkpoint - but never names it.', jp: 'パズルを解くとレーダーが次の目的地を示します。' },
   { en: 'Scanning <strong>someone else\'s checkpoint</strong> is a foul. Fouls are private, but they decide ties.', jp: '他チームのQRをスキャンするとファウルになります。' },
