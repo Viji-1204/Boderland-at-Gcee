@@ -18,13 +18,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "starting_power_points": 100,
     "allow_attack_frozen": False,
     "puzzle_cooldown_s": 3,
+    "route_length": 7,  # checkpoints per team route, drawn from the ones in the game
     "photo_hints_per_team": 2,  # checkpoint photos a team may ask for when standing at the spot
     "photo_hint_locked_last": 3,  # ...never on the last N checkpoints of its route
 }
 
 # key -> (type, min, max) for numbers, (bool,) for flags, ("choice", options) for enums
 _SPECS: dict[str, tuple] = {
-    "radar_near_radius_m": (int, 5, 500),
+    "radar_near_radius_m": (int, 1, 500),
     "freeze_duration_s": (int, 10, 1800),
     "jam_duration_s": (int, 10, 1800),
     "ward_duration_s": (int, 30, 3600),
@@ -35,6 +36,7 @@ _SPECS: dict[str, tuple] = {
     "starting_power_points": (int, 0, 100000),
     "allow_attack_frozen": (bool,),
     "puzzle_cooldown_s": (int, 0, 120),
+    "route_length": (int, 3, 10),  # the secret sentences have 10+ words, one fragment per stop
     "photo_hints_per_team": (int, 0, 9),
     "photo_hint_locked_last": (int, 0, 9),
 }

@@ -12,6 +12,11 @@ If Round 2 is already running on port 8000 (Docker, or uvicorn), this only
 puts HTTPS in front of it - same server, same data. Otherwise it starts its
 own server on the local database (backend/data/round2.db).
 
+docker-compose runs it too, as the ``https`` service: ``--proxy`` in front of
+the ``api`` container, so ``docker compose up`` gives both http://…:8000 and
+https://…:8443. Put the computer's Wi-Fi address in ``LAN_IP`` (.env) so the
+certificate names it - phones still see the one-time warning either way.
+
 This is for testing only. For the real event, use a proper domain and
 certificate (see README), or a tunnel such as
 `cloudflared tunnel --url http://localhost:8000`.
@@ -23,9 +28,11 @@ import asyncio
 import datetime
 import ipaddress
 import json
+import os
 import pathlib
 import socket
 import ssl
+import time
 import urllib.request
 
 from cryptography import x509
@@ -53,7 +60,12 @@ def make_certificate(ip: str) -> tuple[pathlib.Path, pathlib.Path]:
     CERT_DIR.mkdir(parents=True, exist_ok=True)
     cert_path, key_path = CERT_DIR / f"dev-{ip}.crt", CERT_DIR / f"dev-{ip}.key"
     if cert_path.exists() and key_path.exists():
-        return cert_path, key_path
+        try:  # reuse it while it has more than two days left, so phones only accept it once
+            existing = x509.load_pem_x509_certificate(cert_path.read_bytes())
+            if existing.not_valid_after_utc - datetime.datetime.now(datetime.timezone.utc) > datetime.timedelta(days=2):
+                return cert_path, key_path
+        except (ValueError, AttributeError):
+            pass  # unreadable or an old cryptography: make a fresh one
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Borderland Round 2 dev ({ip})")])
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -80,9 +92,9 @@ def make_certificate(ip: str) -> tuple[pathlib.Path, pathlib.Path]:
     return cert_path, key_path
 
 
-def round2_running_on(port: int) -> bool:
+def round2_running_on(port: int, host: str = "127.0.0.1") -> bool:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=2) as res:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/v1/health", timeout=2) as res:
             return json.load(res).get("status") == "ok"
     except (OSError, ValueError):
         return False
@@ -113,10 +125,10 @@ def _quiet_disconnects(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     loop.default_exception_handler(context)
 
 
-async def _serve_https_proxy(listen_port: int, app_port: int, tls: ssl.SSLContext) -> None:
+async def _serve_https_proxy(listen_port: int, app_port: int, tls: ssl.SSLContext, app_host: str = "127.0.0.1") -> None:
     async def handle(client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter) -> None:
         try:
-            app_reader, app_writer = await asyncio.open_connection("127.0.0.1", app_port)
+            app_reader, app_writer = await asyncio.open_connection(app_host, app_port)
         except OSError:
             client_writer.close()
             return
@@ -132,14 +144,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=8443, help="HTTPS port the phones use (default 8443)")
     parser.add_argument("--app-port", type=int, default=8000, help="where an already-running Round 2 server listens (default 8000)")
+    parser.add_argument("--app-host", default="127.0.0.1", help="host of that server (docker-compose passes the api service name)")
+    parser.add_argument("--ip", default=os.environ.get("LAN_IP") or "", help="the address phones use, for the certificate (default: detected; env LAN_IP)")
+    parser.add_argument("--proxy", action="store_true", help="only ever front an existing server: wait for it instead of starting one (docker-compose)")
     args = parser.parse_args()
 
-    ip = lan_ip()
+    ip = args.ip.strip() or lan_ip()
     cert, key = make_certificate(ip)
-    in_front = round2_running_on(args.app_port)
+    in_front = round2_running_on(args.app_port, args.app_host)
+    if args.proxy and not in_front:
+        print(f"  Waiting for the Round 2 server at {args.app_host}:{args.app_port}...", flush=True)
+        for _ in range(60):
+            time.sleep(2)
+            if round2_running_on(args.app_port, args.app_host):
+                break
+        in_front = True  # front it regardless; each connection retries on its own
     print("\n  Borderland Round 2 - HTTPS for phones")
     if in_front:
-        print(f"  Adding HTTPS to the Round 2 server already running on port {args.app_port} (Docker or uvicorn): same data.")
+        print(f"  Adding HTTPS to the Round 2 server running at {args.app_host}:{args.app_port}: same data.")
+        if not args.ip.strip() and args.proxy:
+            print("  Tip: set LAN_IP=<this computer's Wi-Fi address> in .env so the certificate names the address phones use.")
     else:
         print(f"  Nothing is running on port {args.app_port}, so starting a server here (database: backend/data/round2.db).")
     print(f"  Team app  : https://{ip}:{args.port}/team-app/")
@@ -152,7 +176,7 @@ def main() -> None:
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.load_cert_chain(cert, key)
         try:
-            asyncio.run(_serve_https_proxy(args.port, args.app_port, tls))
+            asyncio.run(_serve_https_proxy(args.port, args.app_port, tls, args.app_host))
         except KeyboardInterrupt:
             pass
         return

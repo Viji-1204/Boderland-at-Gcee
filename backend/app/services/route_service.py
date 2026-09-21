@@ -1,8 +1,9 @@
 """Route generation and validation (spec sections 5 and 6).
 
 Rules:
-* Every team visits every selected location once. Seq 1 is its starting
-  checkpoint.
+* The checkpoints marked "in the game" are a pool (up to 15). Every team
+  gets its own route of ``route_length`` of them (Game Setup, default 7):
+  its own subset, in its own order. Seq 1 is its starting checkpoint.
 * Every team meets a Jack, a Queen and a King, in that order. The three are
   dealt per team: when routes are generated, three of the team's stops are
   picked at random and the cards are laid on them in visit order. So two
@@ -31,9 +32,13 @@ from app.core.exceptions import AppError, ConflictError
 from app.models import Event, EventStatus, FaceCard, Location, RouteStop, Team, TeamStatus
 from app.services.event_settings import event_settings
 
-MIN_SELECTED = 7
-MAX_SELECTED = 9
-MAX_POOL = 15
+MAX_POOL = 15  # the checkpoint library (L01-L15)
+MIN_ROUTE = 3
+
+
+def route_length(event: Event) -> int:
+    """How many checkpoints each team visits."""
+    return max(MIN_ROUTE, int(event_settings(event)["route_length"]))
 
 
 def selected_locations(db: Session) -> list[Location]:
@@ -67,48 +72,53 @@ def deal_face_cards(n: int, rng: random.Random) -> list[str | None]:
     return faces
 
 
-def start_capacity(n_locations: int) -> int:
-    """How many distinct routes begin at any one start: the other stops in
-    any order. (The cards are dealt on top and don't limit this.)"""
-    return math.factorial(max(n_locations - 1, 0))
+def start_capacity(pool_size: int, k: int) -> int:
+    """How many distinct k-stop routes begin at any one start: an ordered
+    pick of k-1 of the other pool_size-1 checkpoints. (The cards are dealt
+    on top and don't limit this.)"""
+    if pool_size < k or k < 1:
+        return 0
+    return math.perm(pool_size - 1, k - 1)
 
 
-def capacity_summary(locs: Sequence[Location], team_count: int) -> dict:
+def capacity_summary(locs: Sequence[Location], team_count: int, k: int) -> dict:
     n = len(locs)
-    per_start = start_capacity(n)
+    per_start = start_capacity(n, k)
     total = n * per_start
-    feasible = bool(locs) and team_count <= total
-    if locs and team_count:
+    feasible = n >= k and team_count <= total
+    if feasible and team_count:
         # Round-robin gives each start at most ceil(teams / starts) teams.
-        feasible = feasible and per_start >= math.ceil(team_count / n)
+        feasible = per_start >= math.ceil(team_count / n)
+    if n < k:
+        message = f"Only {n} checkpoint(s) in the game but each route needs {k}: put more in the game, or lower the route length in Game Setup."
+    elif feasible:
+        message = f"{n} checkpoints in the game, {k} per route: up to {total} unique routes for {team_count} team(s)."
+    else:
+        message = f"{n} checkpoints in the game, {k} per route: only {total} unique routes for {team_count} team(s). Put more checkpoints in the game or shorten the route."
     return {
         "selected_locations": n,
+        "route_length": k,
         "starting_points": n,
         "unique_routes": total,
         "teams": team_count,
         "feasible": feasible,
-        "message": (
-            f"{n} locations support up to {total} valid unique routes for {team_count} team(s)."
-            if feasible
-            else f"{n} locations support up to {total} valid unique routes - you have {team_count} team(s). "
-            "Add more locations or reduce the team count."
-        ),
+        "message": message,
     }
 
 
-def _check_pool(locs: Sequence[Location]) -> None:
-    if not MIN_SELECTED <= len(locs) <= MAX_SELECTED:
+def _check_pool(locs: Sequence[Location], k: int) -> None:
+    if len(locs) < k:
         raise AppError(
-            f"Select between {MIN_SELECTED} and {MAX_SELECTED} locations for the event "
-            f"(currently {len(locs)} selected)."
+            f"Only {len(locs)} checkpoint(s) in the game but each route needs {k}. "
+            "Put more checkpoints in the game (Setup Routes), or lower the route length (Game Setup)."
         )
+    if len(locs) > MAX_POOL:
+        raise AppError(f"At most {MAX_POOL} checkpoints can be in the game.")
 
 
-def _random_route(start: Location, others: list[Location], rng: random.Random) -> list[Location]:
-    """Uniformly random route from ``start``."""
-    rest = others[:]
-    rng.shuffle(rest)
-    return [start, *rest]
+def _random_route(start: Location, others: list[Location], k: int, rng: random.Random) -> list[Location]:
+    """A random k-stop route from ``start``: k-1 of the other checkpoints, in random order."""
+    return [start, *rng.sample(others, k - 1)]
 
 
 def recompute_start_offsets(db: Session, event: Event) -> None:
@@ -135,12 +145,13 @@ def generate_routes(db: Session, event: Event, rng: random.Random | None = None)
     _ensure_draft(event)
     rng = rng or random.SystemRandom()
     locs = selected_locations(db)
-    _check_pool(locs)
+    k = route_length(event)
+    _check_pool(locs, k)
     teams = route_teams(db, event.id)
     if not teams:
         raise AppError("Add teams before generating routes.")
 
-    summary = capacity_summary(locs, len(teams))
+    summary = capacity_summary(locs, len(teams), k)
     if not summary["feasible"]:
         raise ConflictError(summary["message"])
 
@@ -148,9 +159,9 @@ def generate_routes(db: Session, event: Event, rng: random.Random | None = None)
     rng.shuffle(eligible)
     starts = [eligible[i % len(eligible)] for i in range(len(teams))]
 
-    n = len(locs)
     used: set[tuple[str, ...]] = set()
-    at_position = [Counter() for _ in range(n)]
+    at_position = [Counter() for _ in range(k)]
+    usage: Counter = Counter()  # how many routes each checkpoint is in - keep the whole pool in play
     chosen: dict[str, list[Location]] = {}
 
     for team, start in zip(teams, starts):
@@ -159,28 +170,31 @@ def generate_routes(db: Session, event: Event, rng: random.Random | None = None)
         best_score = 0
         sampled = 0
         for _attempt in range(5000):
-            candidate = _random_route(start, others, rng)
+            candidate = _random_route(start, others, k, rng)
             key = tuple(loc.id for loc in candidate)
             if key in used:
                 continue
             sampled += 1
-            # Position 0 is the shared start (staggered), so it doesn't count.
-            score = sum(at_position[i][loc.id] for i, loc in enumerate(candidate) if i > 0)
+            # Two teams at the same checkpoint on the same step is the thing to
+            # avoid (position 0 is the shared start, staggered, so it doesn't
+            # count); after that, prefer checkpoints few routes use yet.
+            score = 3 * sum(at_position[i][loc.id] for i, loc in enumerate(candidate) if i > 0) + sum(usage[loc.id] for loc in candidate)
             if best is None or score < best_score:
                 best, best_score = candidate, score
-            if best_score == 0 or sampled >= 60:
+            if best_score == 0 or sampled >= 80:
                 break
         if best is None:
-            raise ConflictError(f"Could not find a unique route for {team.team_name}. Add more locations.")
+            raise ConflictError(f"Could not find a unique route for {team.team_name}. Put more checkpoints in the game.")
         used.add(tuple(loc.id for loc in best))
         for i, loc in enumerate(best):
             at_position[i][loc.id] += 1
+            usage[loc.id] += 1
         chosen[team.id] = best
 
     db.execute(delete(RouteStop).where(RouteStop.team_id.in_([t.id for t in teams])))
     db.flush()
     for team in teams:
-        faces = deal_face_cards(n, rng)  # each team's own Jack, Queen and King
+        faces = deal_face_cards(k, rng)  # each team's own Jack, Queen and King
         for seq, (loc, face) in enumerate(zip(chosen[team.id], faces), start=1):
             db.add(RouteStop(team_id=team.id, location_id=loc.id, seq=seq, face_card=face))
     db.flush()
@@ -206,11 +220,14 @@ def set_manual_route(
     """
     _ensure_draft(event)
     locs = selected_locations(db)
+    k = route_length(event)
     by_id = {loc.id: loc for loc in locs}
     if len(location_ids) != len(set(location_ids)):
-        raise AppError("A route can't visit the same location twice.")
-    if set(location_ids) != set(by_id):
-        raise AppError("A route must visit every selected location exactly once.")
+        raise AppError("A route can't visit the same checkpoint twice.")
+    if len(location_ids) != k:
+        raise AppError(f"A route has exactly {k} checkpoints (Game Setup).")
+    if not set(location_ids) <= set(by_id):
+        raise AppError("Every stop must be a checkpoint that is in the game.")
     key = tuple(location_ids)
     for other in route_teams(db, event.id):
         if other.id != team.id and tuple(s.location_id for s in other.route) == key:
@@ -245,6 +262,7 @@ def set_manual_route(
 def route_problems(db: Session, event: Event) -> list[str]:
     """Every reason the current routes can't be locked; empty list = all good."""
     ids = {loc.id for loc in selected_locations(db)}
+    k = route_length(event)
     problems: list[str] = []
     seen: dict[tuple[str, ...], str] = {}
     for team in route_teams(db, event.id):
@@ -253,8 +271,8 @@ def route_problems(db: Session, event: Event) -> list[str]:
         if not stops:
             problems.append(f"{team.team_name} has no route.")
             continue
-        if len(loc_ids) != len(ids) or set(loc_ids) != ids:
-            problems.append(f"{team.team_name}'s route doesn't match the selected locations.")
+        if len(loc_ids) != k or len(set(loc_ids)) != k or not set(loc_ids) <= ids:
+            problems.append(f"{team.team_name}'s route doesn't match the game ({k} distinct checkpoints from the ones in the game) - regenerate.")
             continue
         if not face_cards_ok([s.face_card for s in stops]):
             problems.append(f"{team.team_name}'s route doesn't hold a Jack, a Queen and a King in that order - regenerate or edit it.")

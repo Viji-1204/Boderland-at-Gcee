@@ -152,7 +152,7 @@ Chrome DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`).
 
 ```powershell
 cd backend
-python -m pytest              # 111 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
+python -m pytest              # 112 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
 python full_verification.py   # plays a whole event through the real API and prints each step
 ```
 
@@ -175,7 +175,15 @@ Remove-Item Env:TEST_DATABASE_URL; docker stop bl2-pg-test   # the container del
 
 Phone browsers only allow the **camera** (QR scanner) and **GPS** (radar) on
 `https://` addresses. `http://<laptop-ip>:8000` opens on a phone, but it can't scan.
-Keep the server running (Docker or Python), then in a second terminal run:
+
+**With Docker** nothing extra is needed: `docker compose up -d` also starts the
+`https` service on port **8443**. Put the laptop's Wi-Fi address in `.env`
+(`LAN_IP=10.186.139.22` - find it with `ipconfig`) so the certificate names it, and
+open `https://<LAN_IP>:8443/team-app/`. `docker compose logs https` prints the
+addresses. If the laptop joins another network, change `LAN_IP` and run
+`docker compose up -d https` again.
+
+**With Python** (no Docker), keep the server running and in a second terminal run:
 
 ```powershell
 cd backend
@@ -183,8 +191,7 @@ python dev_https.py
 ```
 
 It adds HTTPS in front of the server on port 8000 (same data; if nothing is running
-there, it starts a server itself). It prints the address, e.g.
-`https://10.186.139.188:8443/team-app/`. Leave that window open.
+there, it starts a server itself) and prints the address. Leave that window open.
 
 1. **Laptop:** open the printed **Admin app** address. The browser warns about the
    certificate once: *Advanced → Proceed*. Log in and go to **QR Codes**.
@@ -199,8 +206,8 @@ there, it starts a server itself). It prints the address, e.g.
 
 **Phone can't open the address?** Check it's on the same Wi-Fi as the laptop.
 College and guest Wi-Fi often block traffic between devices; if so, connect the
-laptop to a phone's hotspot instead. Allow Python through the Windows firewall if
-asked. The address changes whenever the laptop joins another network: re-run
+laptop to a phone's hotspot instead. Allow Python (or Docker Desktop's backend)
+through the Windows firewall if asked. The address changes whenever the laptop joins another network: re-run
 `dev_https.py` and use the new address.
 
 **No warnings, any network (even mobile data):** a tunnel gives a real HTTPS
@@ -241,10 +248,13 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
   team scans checkpoint 1, its home screen shows the starting checkpoint by name,
   the live distance from the phone's GPS, and an *Open in Google Maps* walking
   route; the radar shows the same. Every later checkpoint stays radar-only.
-- **Routes:** every team visits every selected checkpoint once, in a unique order.
-  Each team is dealt its own Jack, Queen and King - three of its stops, picked at
-  random when routes are generated, met in that order - so teams find them at
-  different checkpoints. The generator also spreads teams out.
+- **Routes:** the checkpoints "in the game" are a pool (up to 15); every team gets
+  its own route of *Checkpoints per team route* of them (Game Setup, default 7) -
+  its own selection, in its own order, never identical to another team's. The
+  generator spreads teams across the whole pool and away from each other. Each team
+  is dealt its own Jack, Queen and King - three of its stops, picked at random, met
+  in that order. Scanning a checkpoint that is in the game but not on your route is
+  a foul like any other wrong QR.
 - **Photo hints.** A team standing at its checkpoint (radar says YOU'RE HERE) that
   can't find the sticker can ask for the checkpoint's photo from Setup Routes:
   twice per game, never on the last three checkpoints (both numbers in Game
@@ -291,8 +301,9 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    (section 3). Walk the campus; at each spot tap **+**. It fills in the GPS point
    (wait for a green "±… m - good"), takes an optional photo, and **Add** saves it.
    The list shows every checkpoint with its map link and photo: **Edit** (name,
-   GPS, radius, in the game or spare, photo) or **Delete**. Up to 15 checkpoints,
-   7–9 in the game. (The Jack, Queen and King aren't set here - see Routes below.)
+   GPS, radius, in the game or spare, photo) or **Delete**. Up to 15 checkpoints;
+   put at least as many in the game as the route length (e.g. 12 in the game for
+   7-stop routes). (The Jack, Queen and King aren't set here - see Routes below.)
    Checkpoints outlive any single run: if a game goes wrong, **Restart game** on
    the dashboard (then **Unlock** if the set-up must change) and generate routes
    again - the same spots and the QR stickers already on the walls carry over.
@@ -366,7 +377,7 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    dry run on the actual phones and network of the venue.
 2. **HTTPS hosting** for event day (domain + Caddy, or a tunnel) and printed QR codes
    pointing at it.
-3. **Rehearse on the event server:** all 111 tests and the full-event smoke run
+3. **Rehearse on the event server:** all 112 tests and the full-event smoke run
    also pass on Postgres 16 (see *Automated checks*), and the Docker stack runs.
    Still run a dry run on the real server and network.
 4. **Scale-out (only if needed):** several API processes would need Redis for the

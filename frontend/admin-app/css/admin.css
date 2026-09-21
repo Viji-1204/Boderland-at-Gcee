@@ -18,7 +18,7 @@
   background: linear-gradient(135deg, #f1f3f5 0%, #e2e6ea 100%);
 }
 
-@media (max-width: 860px) {
+@media screen and (max-width: 860px) {
   .admin-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
@@ -117,7 +117,7 @@
   height: 100vh;
   overflow-y: auto;
 }
-@media (max-width: 860px) {
+@media screen and (max-width: 860px) {
   .admin-main { padding: 16px 14px 32px; }
 }
 
@@ -1876,7 +1876,7 @@
 /* Spinner inside a busy button. */
 .btn .mi.spin { animation: spin 0.9s linear infinite; display: inline-block; }
 
-@media (max-width: 720px) {
+@media screen and (max-width: 720px) {
   .modal.import-modal, .modal.winners-modal { padding: 20px 16px; }
   .import-table-wrap { max-height: 52vh; }
 }

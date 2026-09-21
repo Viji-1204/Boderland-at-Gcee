@@ -29,9 +29,10 @@ export function renderRoutes(main, ctx) {
     const draft = data.status === 'DRAFT';
     main.querySelector('#generate').disabled = !draft;
     const cap = data.capacity;
-    const locCount = data.selected_locations.length;
+    const poolCount = data.selected_locations.length;
+    const locCount = data.route_length || poolCount; // stops per team
     box.innerHTML = `
-      ${cap ? `<div class="r2-banner-note ${cap.feasible ? 'info' : 'bad'}">${esc(cap.message)} Starting checkpoints available: ${cap.starting_points}.</div>` : '<div class="r2-banner-note warn">Select 7-9 locations first.</div>'}
+      <div class="r2-banner-note ${cap && cap.feasible ? 'info' : 'warn'}"><strong>Each team visits ${locCount} of the ${poolCount} checkpoints in the game</strong>, in its own order - a different selection per team. Change the pool in <a href="#/setup-routes">Setup Routes</a> and the route length in <a href="#/setup">Game Setup</a>.${cap ? ` ${esc(cap.message)}` : ' Put some checkpoints in the game first.'}</div>
       ${data.problems.length ? `<div class="r2-banner-note bad"><strong>Needs attention:</strong><br>${data.problems.map(esc).join('<br>')}</div>` : (data.teams.length ? '<div class="r2-banner-note info">Every route is valid and unique, and every team holds its own Jack, Queen and King in that order.</div>' : '')}
       ${draft ? '' : `<div class="r2-banner-note warn">The event is ${data.status} - routes are locked.</div>`}
       <div class="dash-card" style="overflow-x:auto;">
@@ -58,7 +59,8 @@ export function renderRoutes(main, ctx) {
     const locs = data.selected_locations;
     const current = team.stops.map((s) => s.location_id);
     const holder = (face) => (team.stops.find((s) => s.face_card === face) || {}).location_id || '';
-    const rows = locs.map((_, i) => `
+    const locCount = data.route_length || locs.length;
+    const rows = Array.from({ length: locCount }, (_, i) => `
       <label style="display:flex;gap:10px;align-items:center;margin-bottom:6px;font-size:.8rem;">
         <span class="mono" style="width:24px;">${i + 1}</span>
         <select name="pos${i}" style="flex:1;padding:6px;border:1px solid #dee2e6;border-radius:6px;">
@@ -73,13 +75,13 @@ export function renderRoutes(main, ctx) {
         </select>
       </label>`).join('');
     openModal(`Edit route - ${team.team_name}`, `
-      <p class="r2-hint-text">Every selected location exactly once; not identical to another team's route. Position 1 is the starting checkpoint.</p>
+      <p class="r2-hint-text">${locCount} different checkpoints from the ones in the game; not identical to another team's route. Position 1 is the starting checkpoint.</p>
       ${rows}
       <p class="r2-hint-text" style="margin-top:12px;"><strong>This team's face cards.</strong> Three different checkpoints, visited in the order Jack, Queen, King.</p>
       ${faces}`, {
       submitLabel: 'Save route',
       onSubmit: async (fd) => {
-        const ids = locs.map((_, i) => fd.get(`pos${i}`));
+        const ids = Array.from({ length: locCount }, (_, i) => fd.get(`pos${i}`));
         const cards = Object.fromEntries(FACES.map((face) => [face, fd.get(face)]));
         const res = await guarded(() => api.admin.setRoute(ctx.eventId, teamId, ids, cards), 'Route saved');
         if (!res) return false;

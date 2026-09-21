@@ -11,8 +11,7 @@ import { esc, toast } from '../../../shared/js/ui.js';
 import { confirmModal, guarded, openModal, pill } from '../common.js';
 
 const CODES = Array.from({ length: 15 }, (_, i) => `L${String(i + 1).padStart(2, '0')}`);
-const MIN_IN_GAME = 7;
-const MAX_IN_GAME = 9;
+const MAX_IN_GAME = 15;
 
 // --- GPS -------------------------------------------------------------------
 
@@ -201,6 +200,7 @@ export function renderSetupRoutes(main, ctx) {
   const photoUrls = new Map(); // "id|version|size" -> object URL
   let inUse = null; // the event whose routes lock the set of checkpoints, if any
   let locations = [];
+  let routeLength = 7; // checkpoints per team route (Game Setup)
 
   function photoUrl(loc, thumb) {
     const key = `${loc.id}|${loc.photo_updated_at}|${thumb ? 't' : 'f'}`;
@@ -214,9 +214,10 @@ export function renderSetupRoutes(main, ctx) {
 
   async function load() {
     try {
-      const [usage, locs] = await Promise.all([api.admin.checkpointsInUse(), api.admin.checkpoints()]);
+      const [usage, locs, game] = await Promise.all([api.admin.checkpointsInUse(), api.admin.checkpoints(), api.admin.theEvent().catch(() => null)]);
       inUse = usage.event;
       locations = locs;
+      if (game && game.settings && game.settings.route_length) routeLength = game.settings.route_length;
       render();
     } catch (err) {
       box.innerHTML = `<p class="status-note error">${esc(err.message)}</p>`;
@@ -252,7 +253,7 @@ export function renderSetupRoutes(main, ctx) {
     const draft = !inUse; // no locked or running event: the set of checkpoints may change
     const inGame = locations.filter((l) => l.is_selected);
     const freeCodes = CODES.filter((c) => !locations.some((l) => l.code === c));
-    const countOk = inGame.length >= MIN_IN_GAME && inGame.length <= MAX_IN_GAME;
+    const countOk = inGame.length >= routeLength && inGame.length <= MAX_IN_GAME;
     main.querySelector('#status').innerHTML = inUse ? pill(inUse.status, `Locked: game ${inUse.status}`) : pill('DRAFT', 'Editable');
     addBtn.hidden = !(draft && freeCodes.length);
 
@@ -267,7 +268,7 @@ export function renderSetupRoutes(main, ctx) {
       ${draft && !freeCodes.length ? '<div class="r2-banner-note info">All 15 checkpoint codes are used. Delete one to add another.</div>' : ''}
       <div class="r2-ckpt-summary">
         ${pill(countOk ? 'LIVE' : 'DISQUALIFIED', `${inGame.length} in the game`)}
-        <span class="muted">need ${MIN_IN_GAME}-${MAX_IN_GAME}</span>
+        <span class="muted">each team visits ${routeLength} of them (<a href="#/setup">Game Setup</a>) · need at least ${routeLength}</span>
         <span>${locations.length}/15 checkpoints</span>
       </div>
       ${locations.length ? `<div class="r2-ckpt-list">${locations.map((l) => card(l, draft)).join('')}</div>` : `

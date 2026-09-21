@@ -61,7 +61,7 @@
 .btn.good { border-color: #86efac; color: #166534; }
 
 .r2-cols { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
-@media (max-width: 1100px) { .r2-cols { grid-template-columns: 1fr; } }
+@media screen and (max-width: 1100px) { .r2-cols { grid-template-columns: 1fr; } }
 .r2-feed { max-height: 420px; overflow-y: auto; font-size: .76rem; }
 .r2-feed div { padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
 .r2-feed time { color: #94a3b8; font-family: var(--font-mono); margin-right: 6px; }
@@ -120,7 +120,7 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
 .r2-photo-full img { display: block; width: 100%; height: auto; border-radius: 8px; }
 .r2-ckpt-pointer { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: .85rem; }
 .r2-ckpt-pointer > div { flex: 1; min-width: 220px; }
-@media (max-width: 860px) {
+@media screen and (max-width: 860px) {
   .r2-ckpt-list { grid-template-columns: 1fr; }
   .r2-fab { right: 16px; bottom: 16px; }
 }
@@ -141,12 +141,6 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
 .r2-qr-card .img svg, .r2-qr-card .img img { width: 100%; height: 100%; }
 .r2-qr-card .token { font-family: var(--font-mono); font-size: .78rem; word-break: break-all; }
 .r2-qr-card .brand-line { font-size: .6rem; letter-spacing: .14em; text-transform: uppercase; color: #94a3b8; margin-top: 6px; }
-@media print {
-  .admin-shell { display: block; height: auto; overflow: visible; background: #fff; }
-  .admin-nav, .no-print { display: none !important; }
-  .admin-main { height: auto; overflow: visible; padding: 0; max-width: none; }
-  .r2-qr-sheet { grid-template-columns: repeat(3, 1fr); }
-}
 
 /* ---- Responsive shell -------------------------------------------------------
    Desktop: sidebar + fluid content (centred, up to 1600px wide). Tablet: a
@@ -162,7 +156,7 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
 .r2-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; scrollbar-width: thin; }
 .r2-table-scroll > .dtable { min-width: 100%; }
 
-@media (max-width: 1100px) {
+@media screen and (max-width: 1100px) {
   .admin-shell { grid-template-columns: 196px 1fr; }
   .admin-nav a { padding: 8px 14px; font-size: .78rem; }
   .admin-nav .brand { padding: 16px 14px 10px; }
@@ -170,7 +164,7 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
   .stats-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 }
 
-@media (max-width: 860px) {
+@media screen and (max-width: 860px) {
   .admin-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .r2-tabs { flex-wrap: wrap; }
   .r2-tabs .btn { flex: 1 1 auto; justify-content: center; }
@@ -209,7 +203,7 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
   .r2-form-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 }
 
-@media (max-width: 480px) {
+@media screen and (max-width: 480px) {
   .stats-row { grid-template-columns: repeat(3, 1fr); }
   .stat-card .section-header { font-size: .68rem; }
   .r2-form-grid { grid-template-columns: 1fr 1fr; }
@@ -224,3 +218,18 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
 .r2-puzzle-num { position: absolute; left: 12px; top: 10px; width: 24px; height: 24px; border-radius: 50%; background: #111827; color: #fff; font-size: .75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .r2-restart-list { margin: 0; padding-left: 18px; font-size: .82rem; line-height: 1.45; }
 .r2-restart-list li { margin-bottom: 4px; }
+
+/* ---- Print (the QR sheet) ---------------------------------------------------
+   The console is a fixed-height shell with a scrolling content pane; on paper
+   everything must flow so the browser can paginate. Kept last so nothing
+   above can override it. ---- */
+@page { margin: 10mm; }
+@media print {
+  html, body, #app { height: auto !important; min-height: 0 !important; overflow: visible !important; background: #fff !important; }
+  .admin-shell { display: block !important; height: auto !important; overflow: visible !important; }
+  .admin-nav, .no-print, .r2-fab, .r2-table-scroll::-webkit-scrollbar { display: none !important; }
+  .admin-main { height: auto !important; max-height: none !important; overflow: visible !important; padding: 0 !important; max-width: none !important; }
+  .r2-qr-sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
+  .r2-qr-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+  .r2-qr-card .img { width: 52mm; height: 52mm; }
+}

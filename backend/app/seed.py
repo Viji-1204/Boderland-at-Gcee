@@ -105,6 +105,7 @@ def seed_demo_event(db: Session, name: str = "Round 2 - Demo Hunt") -> Event:
             "radar_near_radius_m": 30,
             "geofence_mode": "off",
             "starting_power_points": 100,
+            "route_length": 8,  # the demo visits all eight of its checkpoints
         },
         final_location_name="Coordinator's Bench",
         final_latitude=13.08200,

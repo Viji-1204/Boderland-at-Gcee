@@ -2,7 +2,7 @@
 # `pgdata` volume. Put JWT_SECRET and ADMIN_PASSWORD in a `.env` file next to
 # this one (see .env.example) - compose refuses to start without them.
 #
-#   docker compose up -d --build     ->  http://localhost:8000
+#   docker compose up -d --build     ->  http://localhost:8000  and  https://<LAN_IP>:8443
 #   docker compose ps                ->  api should say "(healthy)"
 #   docker compose logs -f api       ->  live server log
 #   docker compose down              ->  stop (keeps the data; add -v to WIPE it)
@@ -10,8 +10,11 @@
 # Shows up in Docker Desktop as "borderland-round2". Round 1's old stack also
 # uses port 8000: run one at a time, or set ROUND2_PORT in .env.
 #
-# For the event, put an HTTPS reverse proxy (Caddy / nginx) in front of port
-# 8000: phone cameras and GPS only work on https://.
+# Phone cameras and GPS only work on https://. The `https` service below puts
+# a self-signed HTTPS front on port 8443 (phones accept its warning once). Set
+# LAN_IP in .env to this computer's Wi-Fi address so the certificate names it.
+# For the real event a proper certificate (Caddy / nginx, or a cloudflared
+# tunnel to port 8000) avoids the warning altogether.
 name: borderland-round2
 
 services:
@@ -39,6 +42,21 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  https:
+    # HTTPS for phones: the same server as `api`, behind a self-signed certificate.
+    build: .
+    command: ["python", "dev_https.py", "--proxy", "--app-host", "api", "--app-port", "8000", "--port", "8443"]
+    environment:
+      LAN_IP: ${LAN_IP:-}
+    ports:
+      - "${ROUND2_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - devcert:/app/backend/data/dev-cert   # the certificate survives restarts, so phones accept it once
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:16
     environment:
@@ -56,3 +74,4 @@ services:
 
 volumes:
   pgdata:
+  devcert:

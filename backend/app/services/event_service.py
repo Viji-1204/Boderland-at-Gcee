@@ -33,10 +33,10 @@ from app.services import audit, sentences
 from app.services.event_settings import event_settings, validate_settings_patch
 from app.services.geo import valid_coordinate
 from app.services.route_service import (
-    MAX_SELECTED,
-    MIN_SELECTED,
+    MAX_POOL,
     capacity_summary,
     recompute_start_offsets,
+    route_length,
     route_problems,
     route_teams,
     selected_locations,
@@ -164,6 +164,7 @@ def split_sentence(sentence: str | None, parts: int) -> list[str] | None:
 def readiness(db: Session, event: Event) -> list[dict]:
     locs = selected_locations(db)
     n = len(locs)
+    k = route_length(event)
     teams = route_teams(db, event.id)
     checks: list[dict] = []
 
@@ -172,9 +173,9 @@ def readiness(db: Session, event: Event) -> list[dict]:
 
     add(
         "locations",
-        f"{MIN_SELECTED}-{MAX_SELECTED} checkpoints selected",
-        MIN_SELECTED <= n <= MAX_SELECTED,
-        f"{n} selected",
+        f"At least {k} checkpoints in the game (each team visits {k} of them)",
+        k <= n <= MAX_POOL,
+        f"{n} in the game, {k} per route",
     )
     missing_coords = [loc.code for loc in locs if not valid_coordinate(loc.latitude, loc.longitude)]
     add("coordinates", "Every checkpoint has GPS coordinates", bool(locs) and not missing_coords,
@@ -182,7 +183,7 @@ def readiness(db: Session, event: Event) -> list[dict]:
 
     add("teams", "At least one team", bool(teams), f"{len(teams)} team(s)")
 
-    cap = capacity_summary(locs, len(teams)) if locs else {"feasible": False, "message": "No checkpoints selected"}
+    cap = capacity_summary(locs, len(teams), k) if locs else {"feasible": False, "message": "No checkpoints in the game"}
     add("capacity", "Enough unique routes for every team", bool(locs) and cap["feasible"], cap["message"])
 
     # A valid route also holds the team's Jack, Queen and King in order.
@@ -190,8 +191,8 @@ def readiness(db: Session, event: Event) -> list[dict]:
     add("routes", "Every team has a valid, unique route with its Jack, Queen and King", not problems, "All valid" if not problems else problems[0] + (f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""))
 
     # A missing sentence is dealt at lock; only a typed one that won't split is a problem.
-    bad_sentences = [t.team_name for t in teams if (t.sentence or "").strip() and split_sentence(t.sentence, n) is None]
-    add("sentences", f"Every team's sentence splits into {n} fragments", bool(teams) and not bad_sentences,
+    bad_sentences = [t.team_name for t in teams if (t.sentence or "").strip() and split_sentence(t.sentence, k) is None]
+    add("sentences", f"Every team's sentence splits into {k} fragments", bool(teams) and not bad_sentences,
         "All set" if teams and not bad_sentences else f"Check: {', '.join(bad_sentences[:4]) or 'no teams'}" + ("..." if len(bad_sentences) > 4 else ""))
 
     add("final", "Final destination (Joker) has GPS coordinates", valid_coordinate(event.final_latitude, event.final_longitude),
@@ -212,7 +213,7 @@ def lock(db: Session, event: Event, admin: Admin) -> None:
             "Not ready to lock: " + "; ".join(f"{c['label']} ({c['detail']})" for c in failing),
             extra={"checks": failing},
         )
-    n = len(selected_locations(db))
+    n = route_length(event)  # one fragment per stop of the team's route
     teams = route_teams(db, event.id)
     sentences.fill_missing(db, event.id)  # nobody starts without a secret sentence
     db.execute(delete(SentenceFragment).where(SentenceFragment.team_id.in_([t.id for t in teams])))

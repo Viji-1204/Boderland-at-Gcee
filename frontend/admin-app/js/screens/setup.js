@@ -6,6 +6,7 @@ import { esc, toast } from '../../../shared/js/ui.js';
 import { guarded, pill } from '../common.js';
 
 const SETTING_FIELDS = [
+  ['route_length', 'Checkpoints per team route', 'number'],
   ['radar_near_radius_m', 'Radar "goal is near" radius (m)', 'number'],
   ['attack_response_window_s', 'Attack response window (s)', 'number'],
   ['freeze_duration_s', 'Freeze: how long a team is frozen (s)', 'number'],
@@ -68,7 +69,7 @@ export function renderSetup(main, ctx) {
       <div class="dash-card" style="margin-bottom:16px;">
         <div class="section-header"><span class="mi">settings</span> Game & rules</div>
         <form id="settings-form" class="r2-form-grid">
-          ${SETTING_FIELDS.map(([k, label]) => `<label>${label}<input name="${k}" type="number" value="${s[k]}" required /></label>`).join('')}
+          ${SETTING_FIELDS.map(([k, label]) => `<label>${label}<input name="${k}" type="number" min="${k === 'radar_near_radius_m' ? 1 : 0}" value="${s[k]}" required /></label>`).join('')}
           <label>Geofence on scans
             <select name="geofence_mode">
               ${['off', 'warn', 'block'].map((m) => `<option value="${m}" ${s.geofence_mode === m ? 'selected' : ''}>${m}</option>`).join('')}
@@ -80,7 +81,8 @@ export function renderSetup(main, ctx) {
             </select></label>
           <div style="grid-column:1/-1;"><button class="btn primary" type="submit"><span class="mi">save</span> Save settings</button></div>
         </form>
-        <p class="r2-hint-text">Geofence "warn" flags scans made far from the checkpoint; "block" rejects them (phones must share location).
+        <p class="r2-hint-text"><strong>Checkpoints per team route:</strong> every team visits this many of the checkpoints that are in the game (Setup Routes) - its own selection, in its own order. Put more in the game than the route length so routes differ (e.g. 12 in the game, 7 per route).
+          Geofence "warn" flags scans made far from the checkpoint; "block" rejects them (phones must share location).
           <strong>Photo hints:</strong> a team standing at its checkpoint (radar says YOU'RE HERE) that can't find the sticker can ask for the checkpoint's photo from Setup Routes - this many times per game, never on the last N checkpoints of its route.</p>
       </div>
 

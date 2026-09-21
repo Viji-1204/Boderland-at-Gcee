@@ -17,12 +17,64 @@ API = "/api/v1"
 
 
 def test_route_capacity_math():
-    locs = [object() for _ in range(7)]
-    assert route_service.start_capacity(7) == 720  # 6!
-    summary = route_service.capacity_summary(locs, 6)
-    assert summary["feasible"] is True and summary["unique_routes"] == 5040 and summary["starting_points"] == 7
-    summary = route_service.capacity_summary(locs, 6000)
-    assert summary["feasible"] is False and "reduce the team count" in summary["message"]
+    pool = [object() for _ in range(12)]
+    assert route_service.start_capacity(12, 7) == 332640  # 11!/5!: an ordered pick of 6 of the other 11
+    assert route_service.start_capacity(7, 7) == 720  # every checkpoint visited: 6!
+    assert route_service.start_capacity(6, 7) == 0  # a route can't be longer than the pool
+    summary = route_service.capacity_summary(pool, 6, 7)
+    assert summary["feasible"] is True and summary["unique_routes"] == 12 * 332640 and summary["starting_points"] == 12
+    short = route_service.capacity_summary(pool[:5], 6, 7)
+    assert short["feasible"] is False and "Only 5" in short["message"]
+
+
+def test_each_team_gets_its_own_seven_of_the_twelve(client):
+    """The pool is 10 here (all the demo checkpoints), the route 7: every team
+    visits a different 7-stop selection, all unique, and the whole pool is used."""
+    demo = seed(client)
+    eid = demo.event_id
+    for l in client.get(f"{API}/admin/checkpoints", headers=demo.admin).json():
+        if not l["is_selected"]:
+            client.patch(f"{API}/admin/checkpoints/{l['id']}", json={"is_selected": True}, headers=demo.admin)
+    assert client.patch(f"{API}/admin/events/{eid}", json={"settings": {"route_length": 7}}, headers=demo.admin).status_code == 200
+    data = client.post(f"{API}/admin/events/{eid}/routes/generate", headers=demo.admin).json()
+    assert data["route_length"] == 7 and len(data["selected_locations"]) == 10 and data["problems"] == []
+    pool = {l["id"] for l in data["selected_locations"]}
+    seen, used = set(), set()
+    for t in data["teams"]:
+        ids = [s["location_id"] for s in t["stops"]]
+        assert len(ids) == 7 and len(set(ids)) == 7 and set(ids) <= pool
+        assert [s["face_card"] for s in t["stops"] if s["face_card"]] == ["JACK", "QUEEN", "KING"]
+        seen.add(tuple(ids))
+        used |= set(ids)
+    assert len(seen) == 6  # unique routes
+    assert used == pool  # six routes of seven over ten checkpoints: the generator spreads them over all ten
+    # The sentence is cut into 7 fragments, one per stop, and play works end to end.
+    assert client.post(f"{API}/admin/events/{eid}/lock", headers=demo.admin).status_code == 200
+    client.post(f"{API}/admin/events/{eid}/start", headers=demo.admin)
+    team = demo.teams["Dragon Warriors"]
+    st = client.get(f"{API}/me/state", headers=team["headers"]).json()
+    assert st["team"]["total_checkpoints"] == 7 and st["fragments_total"] == 7 and len(st["checkpoints"]) == 7
+    route = route_of(team["id"])
+    assert len(route) == 7
+    off_route = next(l for l in client.get(f"{API}/admin/checkpoints", headers=demo.admin).json() if l["id"] not in {r.id for r in route})
+    from tests.helpers import token_for
+    from app.database import SessionLocal
+    from app.models import Location
+
+    with SessionLocal() as db:
+        wrong = db.get(Location, off_route["id"]).qr_token
+    res = scan(client, team, wrong).json()
+    assert res["result"] == "WRONG_QR" and res["foul_added"] is True  # a checkpoint in the game but not on this route
+    assert scan(client, team, route[0].qr_token).json()["result"] == "VALID"
+    # A manual route must also be exactly 7 distinct checkpoints from the pool.
+    client.post(f"{API}/admin/events/{eid}/end", headers=demo.admin)
+    client.post(f"{API}/admin/events/{eid}/restart", headers=demo.admin)
+    client.post(f"{API}/admin/events/{eid}/unlock", headers=demo.admin)
+    ids = [r.id for r in route]
+    bad = client.put(f"{API}/admin/events/{eid}/teams/{team['id']}/route", json={"location_ids": ids[:6]}, headers=demo.admin)
+    assert bad.status_code == 400 and "exactly 7" in bad.json()["detail"]
+    swapped = ids[:6] + [off_route["id"]]
+    assert client.put(f"{API}/admin/events/{eid}/teams/{team['id']}/route", json={"location_ids": swapped}, headers=demo.admin).status_code == 200
 
 
 def test_face_cards_are_dealt_in_order():

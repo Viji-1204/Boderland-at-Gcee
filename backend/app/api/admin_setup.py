@@ -304,7 +304,8 @@ def _routes_out(db: Session, event: Event) -> dict:
     return {
         "status": event.status,
         "selected_locations": [location_out(l) for l in locs],
-        "capacity": route_service.capacity_summary(locs, len(route_service.route_teams(db, event.id))) if locs else None,
+        "route_length": route_service.route_length(event),
+        "capacity": route_service.capacity_summary(locs, len(route_service.route_teams(db, event.id)), route_service.route_length(event)) if locs else None,
         "problems": route_service.route_problems(db, event),
         "teams": [
             {
