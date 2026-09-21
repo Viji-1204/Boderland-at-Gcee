@@ -49,8 +49,9 @@ you press `Ctrl+C` or close that terminal. Your data stays between restarts.
 ### B. Docker Desktop (Postgres, like a real server)
 
 1. Start Docker Desktop.
-2. `.env` must exist next to `docker-compose.yml`. A local one with random secrets
-   was generated for testing. Otherwise copy `.env.example` to `.env` and fill it in.
+2. `.env` must exist next to `docker-compose.yml`. In Git Bash, `./setup.sh --lan`
+   writes one (random secrets, your Wi-Fi address, a coordinator password it asks
+   for or generates). Or copy `.env.example` to `.env` and fill it in by hand.
 3. In the project folder (the one containing `docker-compose.yml`), run:
 
    ```powershell
@@ -174,9 +175,11 @@ Remove-Item Env:TEST_DATABASE_URL; docker stop bl2-pg-test   # the container del
 ## 3. Test on real phones (same Wi-Fi)
 
 Phone browsers only allow the **camera** (QR scanner) and **GPS** (radar) on
-`https://` addresses. `http://<laptop-ip>:8000` opens on a phone, but it can't scan.
+`https://` addresses, so phones never use port 8000 (plain HTTP, and it only
+answers on the laptop itself).
 
-**With Docker** nothing extra is needed: `docker compose up -d` also starts the
+**With Docker** nothing extra is needed: with `COMPOSE_PROFILES=lan` in `.env`
+(the default in `.env.example`) `docker compose up -d` also starts the
 `https` service on port **8443**. Put the laptop's Wi-Fi address in `.env`
 (`LAN_IP=10.186.139.22` - find it with `ipconfig`) so the certificate names it, and
 open `https://<LAN_IP>:8443/team-app/`. `docker compose logs https` prints the
@@ -210,9 +213,9 @@ laptop to a phone's hotspot instead. Allow Python (or Docker Desktop's backend)
 through the Windows firewall if asked. The address changes whenever the laptop joins another network: re-run
 `dev_https.py` and use the new address.
 
-**No warnings, any network (even mobile data):** a tunnel gives a real HTTPS
-address, e.g. `cloudflared tunnel --url http://localhost:8000`. That's also an
-option for event day.
+**No warnings, any network (even mobile data):** host it on a server with a
+domain name - see *Hosting* in section 5 - or, from the laptop, a tunnel gives a
+real HTTPS address, e.g. `cloudflared tunnel --url http://localhost:8000`.
 
 ---
 
@@ -291,8 +294,9 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
 ## 5. Getting ready for the real event
 
 1. **Secrets.** Python: create `backend/.env` (see `backend/.env.example`). Docker:
-   edit the `.env` next to `docker-compose.yml`. Use a random `JWT_SECRET` and a
-   strong `ADMIN_PASSWORD`, and set `ENVIRONMENT=production`.
+   the `.env` next to `docker-compose.yml` - `./setup.sh` writes a sound one (see
+   *Hosting* below). Use a random `JWT_SECRET` and a strong `ADMIN_PASSWORD`, and
+   set `ENVIRONMENT=production`.
    Production refuses to start with placeholder secrets. In development, a random
    signing key is generated in `backend/data/.jwt-secret` automatically.
 2. **The game.** The console runs one game - there is nothing to create or pick.
@@ -349,15 +353,59 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
 
 ### Hosting
 
-- **Simplest:** one laptop or server running `uvicorn` behind HTTPS. SQLite handles
-  one event comfortably, and backing up is copying `backend/data/round2.db`.
-- **Docker + Postgres** (spec section 30): as in section 1B, but with strong
-  passwords, `ENVIRONMENT=production` and `SEED_DEMO=false` in `.env`. Put an HTTPS
-  proxy in front, e.g. [Caddy](https://caddyserver.com):
-  `your-domain { reverse_proxy localhost:8000 }`.
+**On a public server with a domain name** (e.g. a Google Cloud VM and
+`borderland-gcee.online`): phones on any network open `https://your-domain/team-app/`
+with no certificate warning, and the QR codes printed from that address point there.
+The game is tiny for a server - a 2 vCPU / 2 GB VM (`e2-small`) is plenty for 100
+teams; pick the region nearest the campus (`asia-south1`, Mumbai).
+
+1. **VM:** Ubuntu 24.04 LTS, tick *Allow HTTP traffic* and *Allow HTTPS traffic*
+   (ports 80 and 443 - nothing else needs opening). Give it a **static** external
+   IP (VM → network interface → External IP → *Reserve static address*); an
+   ephemeral one changes every time the VM stops.
+2. **DNS** at the registrar: an **A record**, host `@`, pointing at that IP (add
+   `www` too if you want it). Wait until `nslookup your-domain` answers with the IP.
+3. **On the VM** (SSH from the console):
+
+   ```bash
+   git clone https://github.com/Viji-1204/Boderland-at-Gcee.git && cd Boderland-at-Gcee
+   ./setup.sh --public your-domain --start
+   ```
+
+   `setup.sh` asks for a coordinator password (or generates one - it prints it once,
+   save it), writes `.env` with a fresh `JWT_SECRET` and database password,
+   `COMPOSE_PROFILES=public`, `SITE_DOMAIN`, `SEED_DEMO=false`, checks that the
+   domain's DNS points at this machine, installs Docker if it's missing and runs
+   `docker compose up -d --build`. (`./setup.sh --help` lists the options; without
+   `--start` it only writes `.env`. By hand: copy `.env.example` and fill it in.)
+
+   Then `docker compose logs -f caddy` says `certificate obtained successfully`
+   within a minute; open `https://your-domain/admin-app/`. (`caddy` replaces the
+   laptop's `https` service: it fetches and renews a Let's Encrypt certificate by
+   itself - `deploy/Caddyfile`.)
+4. **Bring the checkpoints and teams from the laptop** instead of typing them again:
+
+   ```bash
+   # laptop (PowerShell):
+   docker compose exec -T postgres pg_dump -U round2 -Fc round2 > round2.dump
+   # copy round2.dump to the VM (the SSH window's upload button, or gcloud compute scp), then on the VM:
+   docker compose stop api caddy && docker compose exec -T postgres pg_restore -U round2 -d round2 --clean --if-exists < round2.dump; docker compose start api caddy
+   ```
+
+   Print the QR codes again from the new address - they carry the address they were
+   printed from.
+5. **Updates:** `git pull && docker compose up -d --build`. **Backup** before and
+   after the event: the `pg_dump` line above.
+
+**Notes for any hosting**
+
 - Run **one** API process. The live hub and per-team locks live in memory; see next steps.
-- Behind a proxy on another machine or container, set `FORWARDED_ALLOW_IPS` to that
-  proxy's address, never `*`, so clients can't fake their IP.
+- Port 8000 is plain HTTP and bound to the machine itself (`ROUND2_BIND=0.0.0.0`
+  in `.env` opens it to the network). `FORWARDED_ALLOW_IPS` names the one proxy
+  whose `X-Forwarded-For` is trusted - the `caddy` container's fixed address by
+  default - never `*`, so clients can't fake their IP.
+- Without Docker: one laptop or server running `uvicorn` behind HTTPS. SQLite handles
+  one event comfortably, and backing up is copying `backend/data/round2.db`.
 
 ### Reset / housekeeping
 

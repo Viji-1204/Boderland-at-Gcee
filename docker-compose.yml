@@ -3,6 +3,7 @@
 # this one (see .env.example) - compose refuses to start without them.
 #
 #   docker compose up -d --build     ->  http://localhost:8000  and  https://<LAN_IP>:8443
+#                                        (or https://SITE_DOMAIN on a public server)
 #   docker compose ps                ->  api should say "(healthy)"
 #   docker compose logs -f api       ->  live server log
 #   docker compose down              ->  stop (keeps the data; add -v to WIPE it)
@@ -13,17 +14,21 @@
 # Phone cameras and GPS only work on https://. The `https` service below puts
 # a self-signed HTTPS front on port 8443 (phones accept its warning once). Set
 # LAN_IP in .env to this computer's Wi-Fi address so the certificate names it.
-# For the real event a proper certificate (Caddy / nginx, or a cloudflared
-# tunnel to port 8000) avoids the warning altogether.
+# On a public server (a cloud VM with a domain name) run the `caddy` service
+# instead: COMPOSE_PROFILES=public and SITE_DOMAIN in .env give a real
+# certificate on ports 80/443 with no warning at all. See README "Hosting".
 name: borderland-round2
 
 services:
   api:
     build: .
     ports:
-      - "${ROUND2_PORT:-8000}:8000"
+      # Plain HTTP, answered on this machine only: phones use `https` or `caddy`.
+      - "${ROUND2_BIND:-127.0.0.1}:${ROUND2_PORT:-8000}:8000"
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      # X-Forwarded-For is trusted from the caddy container only (fixed address below).
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.28.0.10}
       DATABASE_URL: postgresql+psycopg2://round2:${POSTGRES_PASSWORD:-round2}@postgres:5432/round2
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
@@ -43,8 +48,10 @@ services:
     restart: unless-stopped
 
   https:
-    # HTTPS for phones: the same server as `api`, behind a self-signed certificate.
+    # HTTPS for phones on the same Wi-Fi (COMPOSE_PROFILES=lan): the same server
+    # as `api`, behind a self-signed certificate.
     build: .
+    profiles: ["lan"]
     command: ["python", "dev_https.py", "--proxy", "--app-host", "api", "--app-port", "8000", "--port", "8443"]
     environment:
       LAN_IP: ${LAN_IP:-}
@@ -52,6 +59,29 @@ services:
       - "${ROUND2_HTTPS_PORT:-8443}:8443"
     volumes:
       - devcert:/app/backend/data/dev-cert   # the certificate survives restarts, so phones accept it once
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    # HTTPS on a real domain (COMPOSE_PROFILES=public): Caddy gets and renews a
+    # Let's Encrypt certificate for SITE_DOMAIN by itself. Needs the domain's DNS
+    # pointing at this machine and ports 80 + 443 open in the cloud firewall.
+    image: caddy:2
+    profiles: ["public"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # the certificate and Let's Encrypt account
+      - caddy_config:/config
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
     depends_on:
       api:
         condition: service_healthy
@@ -75,3 +105,12 @@ services:
 volumes:
   pgdata:
   devcert:
+  caddy_data:
+  caddy_config:
+
+networks:
+  default:
+    # A fixed subnet so caddy can have the fixed address that api trusts.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

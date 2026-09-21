@@ -1,0 +1,12 @@
+# Public HTTPS for Round 2 - used by the `caddy` service in docker-compose.yml
+# (COMPOSE_PROFILES=public). Caddy fetches a Let's Encrypt certificate for
+# SITE_DOMAIN (from .env) on first start and renews it by itself; http://
+# redirects to https://; WebSockets pass straight through.
+#
+# Needs: the domain's DNS A record pointing at this machine, and ports 80
+# and 443 open in the cloud firewall. Progress: docker compose logs -f caddy
+
+{$SITE_DOMAIN:localhost} {
+	encode zstd gzip
+	reverse_proxy api:8000
+}
