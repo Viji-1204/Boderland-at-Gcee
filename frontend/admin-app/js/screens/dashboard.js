@@ -19,7 +19,7 @@ const CONFIRM = {
   pause: 'Pause the whole game? No team can act until you resume; timers are paused too.',
   resume: 'Resume the game?',
   end: 'End the game? Results become final and teams can no longer play.',
-  unlock: 'Unlock the configuration and go back to DRAFT?',
+  unlock: 'Unlock the configuration and go back to DRAFT? Teams keep their logins; routes are kept until you regenerate them.',
 };
 const DONE_LABEL = { lock: 'Lock', unlock: 'Unlock', start: 'Start Round 2', pause: 'Pause', resume: 'Resume', end: 'End the game' };
 const DONE = {
@@ -87,6 +87,7 @@ export function renderDashboard(main, ctx) {
           <span>Fouls <b style="color:${t.foul_count ? '#dc2626' : 'inherit'}">${t.foul_count}</b></span>
           <span title="Powers left">Powers <b>${esc(held)}</b></span>
           ${t.puzzle_attempts ? `<span>Tries <b>${t.puzzle_attempts}</b></span>` : ''}
+          ${t.photo_hints_used ? `<span>Photo hints <b>${t.photo_hints_used}</b></span>` : ''}
         </div>
         <div class="r2-kv"><span>Target: ${target}</span></div>
         ${t.start_at && Date.parse(t.start_at) > serverNow ? `<div class="r2-kv"><span>Starts at <b>${fmtTime(t.start_at)}</b> (+${t.start_offset_s}s)</span></div>` : ''}
@@ -105,12 +106,12 @@ export function renderDashboard(main, ctx) {
     const readiness = ev.status === 'DRAFT' && data.readiness
       ? `<div class="dash-card" style="margin-bottom:16px;"><div class="section-header"><span class="mi">checklist</span> Ready to lock?</div>
           <ul class="r2-checklist">${data.readiness.map((r) => `<li><span class="mi ${r.ok ? 'ok' : 'bad'}">${r.ok ? 'check_circle' : 'cancel'}</span><div>${esc(r.label)}<small>${esc(r.detail)}</small></div></li>`).join('')}</ul>
-          <p class="r2-hint-text">Fix anything red in <a href="#/setup">Event Setup</a>, <a href="#/setup-routes">Setup Routes</a>, <a href="#/puzzles">Puzzles</a>, <a href="#/teams">Teams</a> or <a href="#/routes">Routes</a>.</p></div>`
+          <p class="r2-hint-text">Fix anything red in <a href="#/setup">Game Setup</a>, <a href="#/setup-routes">Setup Routes</a>, <a href="#/puzzles">Puzzles</a>, <a href="#/teams">Teams</a> or <a href="#/routes">Routes</a>.</p></div>`
       : '';
     box.innerHTML = `
       <div class="dash-card" style="margin-bottom:16px;">
         <div class="r2-row" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
-          <div><div style="font-size:1.05rem;font-weight:700;">${esc(ev.name)}</div>
+          <div><div style="font-size:1.05rem;font-weight:700;">Borderland @ GCEE · Round 2</div>
             <div class="r2-hint-text">${ev.started_at ? `Started ${fmtTime(ev.started_at)}` : 'Not started'}${ev.ended_at ? ` · ended ${fmtTime(ev.ended_at)}` : ''}</div></div>
           <div class="btn-row">${actions}</div>
         </div>

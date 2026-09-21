@@ -31,6 +31,13 @@ class ScanIn(BaseModel):
     accuracy: float | None = Field(default=None, ge=0, le=100000)
 
 
+class PhotoHintIn(BaseModel):
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
+    accuracy: float | None = Field(default=None, ge=0, le=100000)
+    idempotency_key: str | None = IdemKey
+
+
 class AnswerIn(BaseModel):
     answer: str = Field(min_length=1, max_length=255)
     idempotency_key: str | None = IdemKey
@@ -71,11 +78,6 @@ class ActionIn(BaseModel):
 
 
 # --- admin: events -------------------------------------------------------------
-class EventCreateIn(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    clone_from_event_id: str | None = None
-
-
 class RestartIn(BaseModel):
     # True: teams get their starting points back and shop again. False: they
     # keep what they bought, with every use reset.

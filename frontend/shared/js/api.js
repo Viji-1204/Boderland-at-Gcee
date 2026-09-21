@@ -236,6 +236,9 @@ export const api = {
     // defence: SHIELD | REFLECT | null (accept the attack)
     defend: (usage_id, defence) => apiFetch('/powers/defend', { ...T, method: 'POST', body: { usage_id, defence, idempotency_key: newIdempotencyKey('def') }, retries: 1 }),
     guide: () => apiFetch('/powers/guide', { ...T, method: 'POST', body: { idempotency_key: newIdempotencyKey('guide') }, retries: 1 }),
+    // Standing at the checkpoint but can't find the sticker: ask for its photo.
+    photoHint: (gps = {}) => apiFetch('/me/photo-hint', { ...T, method: 'POST', body: { ...gps, idempotency_key: newIdempotencyKey('hint') }, retries: 1 }),
+    photoHintImage: () => apiBlob(`/me/photo-hint/image?v=${Date.now()}`, { kind: 'team' }),
     ward: () => apiFetch('/powers/ward', { ...T, method: 'POST', body: { idempotency_key: newIdempotencyKey('ward') }, retries: 1 }),
   },
 
@@ -243,11 +246,10 @@ export const api = {
     login: (username, password) => apiFetch('/auth/admin/login', { method: 'POST', body: { username, password }, auth: false }),
     me: () => apiFetch('/auth/admin/me', A),
 
-    events: () => apiFetch('/admin/events', A),
-    createEvent: (name, clone_from_event_id = null) => apiFetch('/admin/events', { ...A, method: 'POST', body: { name, clone_from_event_id } }),
+    // The app runs one game: this returns it (created on first use), with its id for the calls below.
+    theEvent: () => apiFetch('/admin/event', A),
     event: (id) => apiFetch(ev(id), A),
     updateEvent: (id, body) => apiFetch(ev(id), { ...A, method: 'PATCH', body }),
-    deleteEvent: (id) => apiFetch(ev(id), { ...A, method: 'DELETE' }),
     readiness: (id) => apiFetch(`${ev(id)}/readiness`, A),
     transition: (id, action) => apiFetch(`${ev(id)}/${action}`, { ...A, method: 'POST' }),
     // LIVE / PAUSED / ENDED -> CONFIGURED, discarding the run. refund: teams shop again from scratch.
@@ -260,23 +262,25 @@ export const api = {
     results: (id) => apiFetch(`${ev(id)}/results`, A),
     exportResults: (id) => apiDownload(`${ev(id)}/results/export`, { fallbackName: 'round2-results.xlsx' }),
 
-    locations: (id) => apiFetch(`${ev(id)}/locations`, A),
-    createLocation: (id, body) => apiFetch(`${ev(id)}/locations`, { ...A, method: 'POST', body }),
-    updateLocation: (id, locId, body) => apiFetch(`${ev(id)}/locations/${locId}`, { ...A, method: 'PATCH', body }),
-    deleteLocation: (id, locId) => apiFetch(`${ev(id)}/locations/${locId}`, { ...A, method: 'DELETE' }),
-    regenerateQr: (id, locId) => apiFetch(`${ev(id)}/locations/${locId}/regenerate-qr`, { ...A, method: 'POST' }),
-    setLocationPhoto: (id, locId, photo, thumb) => apiUpload(`${ev(id)}/locations/${locId}/photo`, photo, {}, { files: { thumb } }),
-    deleteLocationPhoto: (id, locId) => apiFetch(`${ev(id)}/locations/${locId}/photo`, { ...A, method: 'DELETE' }),
-    locationPhoto: (id, locId, { thumb = false, version = '' } = {}) =>
-      apiBlob(`${ev(id)}/locations/${locId}/photo?thumb=${thumb ? 1 : 0}&v=${encodeURIComponent(version || '')}`),
-    puzzles: (id) => apiFetch(`${ev(id)}/puzzles`, A),
+    // The checkpoint library is shared by every event (no event id).
+    checkpoints: () => apiFetch('/admin/checkpoints', A),
+    checkpointsInUse: () => apiFetch('/admin/checkpoints/in-use', A),
+    createCheckpoint: (body) => apiFetch('/admin/checkpoints', { ...A, method: 'POST', body }),
+    updateCheckpoint: (locId, body) => apiFetch(`/admin/checkpoints/${locId}`, { ...A, method: 'PATCH', body }),
+    deleteCheckpoint: (locId) => apiFetch(`/admin/checkpoints/${locId}`, { ...A, method: 'DELETE' }),
+    regenerateQr: (locId) => apiFetch(`/admin/checkpoints/${locId}/regenerate-qr`, { ...A, method: 'POST' }),
+    setCheckpointPhoto: (locId, photo, thumb) => apiUpload(`/admin/checkpoints/${locId}/photo`, photo, {}, { files: { thumb } }),
+    deleteCheckpointPhoto: (locId) => apiFetch(`/admin/checkpoints/${locId}/photo`, { ...A, method: 'DELETE' }),
+    checkpointPhoto: (locId, { thumb = false, version = '' } = {}) =>
+      apiBlob(`/admin/checkpoints/${locId}/photo?thumb=${thumb ? 1 : 0}&v=${encodeURIComponent(version || '')}`),
+    puzzles: () => apiFetch('/admin/checkpoints/puzzles', A),
+    qrCodes: () => apiFetch('/admin/checkpoints/qr-codes', A),
     powers: (id) => apiFetch(`${ev(id)}/powers`, A),
     setPowers: (id, items) => apiFetch(`${ev(id)}/powers`, { ...A, method: 'PUT', body: items }),
     routes: (id) => apiFetch(`${ev(id)}/routes`, A),
     generateRoutes: (id) => apiFetch(`${ev(id)}/routes/generate`, { ...A, method: 'POST' }),
     // face_cards: { JACK, QUEEN, KING } -> location id; omit to keep the team's current cards.
     setRoute: (id, teamId, location_ids, face_cards = null) => apiFetch(`${ev(id)}/teams/${teamId}/route`, { ...A, method: 'PUT', body: { location_ids, face_cards } }),
-    qrCodes: (id) => apiFetch(`${ev(id)}/qr-codes`, A),
 
     teams: {
       list: (id) => apiFetch(`${ev(id)}/teams`, A),
@@ -284,6 +288,7 @@ export const api = {
       update: (id, teamId, body) => apiFetch(`${ev(id)}/teams/${teamId}`, { ...A, method: 'PATCH', body }),
       setPassword: (id, teamId, new_password) => apiFetch(`${ev(id)}/teams/${teamId}/password`, { ...A, method: 'PATCH', body: { new_password } }),
       remove: (id, teamId) => apiFetch(`${ev(id)}/teams/${teamId}`, { ...A, method: 'DELETE' }),
+      dealSentences: (id) => apiFetch(`${ev(id)}/teams/deal-sentences`, { ...A, method: 'POST' }),
       importTemplate: () => apiDownload('/admin/teams/import/template', { fallbackName: 'team-import-template.xlsx' }),
       importPreview: (id, file, overrides = {}) => apiUpload(`${ev(id)}/teams/import/preview`, file, {
         team_name_column: overrides.team_name,

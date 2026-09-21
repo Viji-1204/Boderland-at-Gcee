@@ -15,6 +15,8 @@ const SETTING_FIELDS = [
   ['staggered_start_offset_s', 'Stagger for shared starts (s)', 'number'],
   ['starting_power_points', 'Starting power points', 'number'],
   ['puzzle_cooldown_s', 'Puzzle retry cooldown (s)', 'number'],
+  ['photo_hints_per_team', 'Photo hints per team (0 = off)', 'number'],
+  ['photo_hint_locked_last', 'No photo hints on the last N checkpoints', 'number'],
 ];
 const FAMILY_ORDER = ['HELP', 'ATTACK', 'DEFENCE'];
 
@@ -31,14 +33,14 @@ function myPosition() {
 
 export function renderSetup(main, ctx) {
   main.innerHTML = `
-    <div class="admin-topline"><h1 class="admin-h1">Event Setup</h1><div id="status"></div></div>
+    <div class="admin-topline"><h1 class="admin-h1">Game Setup</h1><div id="status"></div></div>
     <div id="setup"><div class="spinner"></div></div>`;
   const box = main.querySelector('#setup');
 
   async function load() {
     try {
       const [event, locations, powers] = await Promise.all([
-        api.admin.event(ctx.eventId), api.admin.locations(ctx.eventId), api.admin.powers(ctx.eventId),
+        api.admin.event(ctx.eventId), api.admin.checkpoints(), api.admin.powers(ctx.eventId),
       ]);
       render(event, locations, powers);
     } catch (err) {
@@ -53,8 +55,8 @@ export function renderSetup(main, ctx) {
     main.querySelector('#status').innerHTML = pill(event.status);
 
     box.innerHTML = `
-      ${draft ? '' : `<div class="r2-banner-note warn">The event is <strong>${event.status}</strong>, so the game's structure is locked.
-        ${event.status === 'CONFIGURED' ? 'Use <em>Unlock</em> on the dashboard to change more.' : ''}</div>`}
+      ${draft ? '' : `<div class="r2-banner-note warn">The game is <strong>${event.status}</strong>, so its structure is locked.
+        ${event.status === 'CONFIGURED' ? 'Use <em>Unlock</em> on the dashboard to change more.' : event.status === 'ENDED' ? 'Use <em>Restart game</em> on the dashboard, then <em>Unlock</em>, to set up the next run.' : ''}</div>`}
 
       <div class="dash-card r2-ckpt-pointer" style="margin-bottom:16px;">
         <span class="mi">add_location_alt</span>
@@ -64,9 +66,8 @@ export function renderSetup(main, ctx) {
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
-        <div class="section-header"><span class="mi">settings</span> Event & rules</div>
+        <div class="section-header"><span class="mi">settings</span> Game & rules</div>
         <form id="settings-form" class="r2-form-grid">
-          <label>Event name<input name="name" value="${esc(event.name)}" maxlength="120" required /></label>
           ${SETTING_FIELDS.map(([k, label]) => `<label>${label}<input name="${k}" type="number" value="${s[k]}" required /></label>`).join('')}
           <label>Geofence on scans
             <select name="geofence_mode">
@@ -79,7 +80,8 @@ export function renderSetup(main, ctx) {
             </select></label>
           <div style="grid-column:1/-1;"><button class="btn primary" type="submit"><span class="mi">save</span> Save settings</button></div>
         </form>
-        <p class="r2-hint-text">Geofence "warn" flags scans made far from the checkpoint; "block" rejects them (phones must share location).</p>
+        <p class="r2-hint-text">Geofence "warn" flags scans made far from the checkpoint; "block" rejects them (phones must share location).
+          <strong>Photo hints:</strong> a team standing at its checkpoint (radar says YOU'RE HERE) that can't find the sticker can ask for the checkpoint's photo from Setup Routes - this many times per game, never on the last N checkpoints of its route.</p>
       </div>
 
       <div class="dash-card" style="margin-bottom:16px;">
@@ -123,7 +125,7 @@ export function renderSetup(main, ctx) {
       SETTING_FIELDS.forEach(([k]) => { settings[k] = Number(fd.get(k)); });
       settings.geofence_mode = fd.get('geofence_mode');
       settings.allow_attack_frozen = fd.get('allow_attack_frozen') === 'true';
-      if (await guarded(() => api.admin.updateEvent(ctx.eventId, { name: fd.get('name'), settings }), 'Settings saved')) ctx.reload();
+      if (await guarded(() => api.admin.updateEvent(ctx.eventId, { settings }), 'Settings saved')) ctx.reload();
     });
 
     const finalForm = box.querySelector('#final-form');

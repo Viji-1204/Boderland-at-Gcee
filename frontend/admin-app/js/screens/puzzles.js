@@ -12,7 +12,7 @@ export function renderPuzzles(main, ctx) {
     <div id="puzzles"><div class="spinner"></div></div>`;
   const box = main.querySelector('#puzzles');
 
-  api.admin.puzzles(ctx.eventId).then(({ types, checkpoints }) => {
+  api.admin.puzzles().then(({ types, checkpoints }) => {
     box.innerHTML = `
       <div class="dash-card" style="margin-bottom:16px;">
         <div class="section-header"><span class="mi">extension</span> Built in - nothing to set up</div>

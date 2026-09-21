@@ -179,7 +179,7 @@ def process_scan(
             )
         )
 
-    loc = db.scalar(select(Location).where(Location.event_id == event.id, Location.qr_token == code))
+    loc = db.scalar(select(Location).where(Location.qr_token == code))
     if loc is None or not loc.is_selected:
         # Not a code of this game (a poster, a typo...). The spec only fouls a
         # valid code that isn't the team's target, so this costs nothing.
@@ -508,6 +508,11 @@ def radar(
         "accuracy_m": round(float(accuracy), 1) if accuracy is not None else None,
         "at": time.time(),
     }
+    if near and not final:
+        # Standing at the spot but can't see the sticker? The near card offers the photo.
+        from app.services import hint_service  # local import: hint_service imports this module
+
+        result["photo_hint"] = hint_service.status(db, event, team)
     if guided:
         return result
     if len(_radar_cache) > 5000:

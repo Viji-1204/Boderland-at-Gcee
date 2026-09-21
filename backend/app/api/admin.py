@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin, load_event, load_team, require_super
+from app.api.deps import get_current_admin, load_event, load_team
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.locks import team_locks
 from app.core.timeutil import iso, utcnow
@@ -22,7 +22,7 @@ from app.models import (
     Location,
     Team,
 )
-from app.schemas.schemas import EventCreateIn, EventUpdateIn, FoulIn, FreezeIn, ReasonIn, RestartIn
+from app.schemas.schemas import EventUpdateIn, FoulIn, FreezeIn, ReasonIn, RestartIn
 from app.services import admin_service, event_service, export_service, power_service, results_service, state_service
 from app.services.event_settings import event_settings
 
@@ -33,10 +33,9 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 def event_summary(db: Session, event: Event) -> dict:
     team_count = db.scalar(select(func.count(Team.id)).where(Team.event_id == event.id)) or 0
-    loc_total = db.scalar(select(func.count(Location.id)).where(Location.event_id == event.id)) or 0
-    loc_selected = db.scalar(
-        select(func.count(Location.id)).where(Location.event_id == event.id, Location.is_selected.is_(True))
-    ) or 0
+    # Checkpoints are shared by every event, so these counts are the library's.
+    loc_total = db.scalar(select(func.count(Location.id))) or 0
+    loc_selected = db.scalar(select(func.count(Location.id)).where(Location.is_selected.is_(True))) or 0
     return {
         "id": event.id,
         "name": event.name,
@@ -59,18 +58,13 @@ def event_summary(db: Session, event: Event) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/events")
-def list_events(_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    events = db.scalars(select(Event).order_by(Event.created_at.desc()))
-    return [event_summary(db, e) for e in events]
-
-
-@router.post("/events", status_code=status.HTTP_201_CREATED)
-def create_event(payload: EventCreateIn, admin: Admin = Depends(require_super), db: Session = Depends(get_db)):
-    clone = load_event(db, payload.clone_from_event_id) if payload.clone_from_event_id else None
-    event = event_service.create_event(db, admin, payload.name, clone)
+@router.get("/event")
+def the_event(_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """The one game (created on first use). Everything else is addressed by
+    its id, which the console reads from here once."""
+    event = event_service.the_event(db)
     db.commit()
-    return event_summary(db, event)
+    return {**event_summary(db, event), "readiness": event_service.readiness(db, event)}
 
 
 @router.get("/events/{event_id}")
@@ -85,16 +79,6 @@ def update_event(event_id: str, payload: EventUpdateIn, admin: Admin = Depends(g
     event_service.update_event(db, event, admin, payload.model_dump(exclude_unset=True))
     db.commit()
     return {**event_summary(db, event), "readiness": event_service.readiness(db, event)}
-
-
-@router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_event(event_id: str, _admin: Admin = Depends(require_super), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    if event.status not in (EventStatus.DRAFT, EventStatus.ENDED):
-        raise ConflictError("Only DRAFT or ENDED events can be deleted.")
-    db.delete(event)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/events/{event_id}/readiness")

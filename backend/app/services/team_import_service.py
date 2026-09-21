@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import AppError, ConflictError
 from app.core.security import hash_password
 from app.models import Event, EventStatus, Team, TeamStatus
+from app.services import sentences
 from app.services.event_settings import event_settings
 
 TEAM_CODE_PREFIX = "B@GCEE-"
@@ -442,7 +443,8 @@ def commit_import(db: Session, event: Event, *, rows: Sequence[dict]) -> list[di
             leader_name=str(row.get("leader_name", "")).strip() or None,
             leader_phone=str(row.get("leader_phone", "")).strip() or None,
             leader_email=str(row.get("leader_email", "")).strip() or None,
-            sentence=str(row.get("sentence", "")).strip() or None,
+            # From the sheet's Sentence column, or dealt from the pool - a different one per team.
+            sentence=str(row.get("sentence", "")).strip() or sentences.deal(db, event.id),
             status=TeamStatus.NOT_STARTED,
             power_points=start_points,
         )

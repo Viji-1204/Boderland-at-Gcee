@@ -21,7 +21,7 @@ export function renderResults(root, navigate) {
     const myName = currentState()?.team.team_name;
     body.innerHTML = `
       <div class="r2-panel" style="text-align:center;">
-        <div class="r2-eyebrow">${esc(data.event_name)}</div>
+        <div class="r2-eyebrow">Borderland @ GCEE · Round 2</div>
         <h3 style="margin:6px 0 0;font-size:1.3rem;">FINAL STANDINGS</h3>
       </div>
       <div class="r2-panel">

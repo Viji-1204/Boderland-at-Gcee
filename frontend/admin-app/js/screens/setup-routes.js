@@ -1,8 +1,11 @@
-// Setup Routes: the checkpoints teams walk between. Stand at a spot, tap +,
-// and its GPS point (plus an optional photo) is saved. The list below is the
-// database's view, with edit and delete. (The Jack, Queen and King aren't set
-// here: each team gets its own, dealt at random on the Routes page.) Works on
-// a phone - that's how it's meant to be used.
+// Setup Routes: the checkpoint library - the spots teams walk between.
+// They outlive any single run of the game. Stand at a spot, tap +, and its GPS point (plus an
+// optional photo) is saved. The list below is the database's view, with edit
+// and delete. The set of checkpoints is frozen while an event is locked or
+// running (its routes depend on it); names, GPS points and photos can always
+// be fixed. (The Jack, Queen and King aren't set here: each team gets its
+// own, dealt at random on the Routes page.) Works on a phone - that's how
+// it's meant to be used.
 import { api } from '../../../shared/js/api.js';
 import { esc, toast } from '../../../shared/js/ui.js';
 import { confirmModal, guarded, openModal, pill } from '../common.js';
@@ -111,7 +114,7 @@ async function preparePhoto(file) {
 function photoPickerHTML(hasPhoto) {
   return `
     <div class="r2-photo-pick">
-      <div class="r2-photo-label">Photo of the spot <span class="muted">(optional - helps coordinators find it; teams never see it)</span></div>
+      <div class="r2-photo-label">Photo of the spot <span class="muted">(shown to a team as a photo hint when it is standing here but can't find the sticker - and helps coordinators find it)</span></div>
       <input type="file" accept="image/*" capture="environment" hidden data-photo-input />
       <div class="r2-photo-preview" data-photo-preview hidden><img alt="Photo preview" /></div>
       <div class="btn-row">
@@ -186,7 +189,7 @@ export function renderSetupRoutes(main, ctx) {
       <div class="admin-topline">
         <div>
           <h1 class="admin-h1">Setup Routes</h1>
-          <p class="r2-hint-text" style="margin:2px 0 0;">The checkpoints teams walk between. Stand at a spot and tap <strong>+</strong> to save its GPS point, with an optional photo.</p>
+          <p class="r2-hint-text" style="margin:2px 0 0;">The checkpoints teams walk between. Stand at a spot and tap <strong>+</strong> to save its GPS point, with an optional photo. They stay from run to run - restart the game and reuse them.</p>
         </div>
         <div id="status"></div>
       </div>
@@ -196,13 +199,13 @@ export function renderSetupRoutes(main, ctx) {
   const box = main.querySelector('#box');
   const addBtn = main.querySelector('#add');
   const photoUrls = new Map(); // "id|version|size" -> object URL
-  let event = null;
+  let inUse = null; // the event whose routes lock the set of checkpoints, if any
   let locations = [];
 
   function photoUrl(loc, thumb) {
     const key = `${loc.id}|${loc.photo_updated_at}|${thumb ? 't' : 'f'}`;
     if (!photoUrls.has(key)) {
-      photoUrls.set(key, api.admin.locationPhoto(ctx.eventId, loc.id, { thumb, version: loc.photo_updated_at })
+      photoUrls.set(key, api.admin.checkpointPhoto(loc.id, { thumb, version: loc.photo_updated_at })
         .then((blob) => URL.createObjectURL(blob))
         .catch((err) => { photoUrls.delete(key); throw err; }));
     }
@@ -211,14 +214,16 @@ export function renderSetupRoutes(main, ctx) {
 
   async function load() {
     try {
-      [event, locations] = await Promise.all([api.admin.event(ctx.eventId), api.admin.locations(ctx.eventId)]);
+      const [usage, locs] = await Promise.all([api.admin.checkpointsInUse(), api.admin.checkpoints()]);
+      inUse = usage.event;
+      locations = locs;
       render();
     } catch (err) {
       box.innerHTML = `<p class="status-note error">${esc(err.message)}</p>`;
     }
   }
 
-  function card(l, draft, ended) {
+  function card(l, draft) {
     const hasGps = !(l.latitude === 0 && l.longitude === 0);
     const coords = `${l.latitude.toFixed(6)}, ${l.longitude.toFixed(6)}`;
     return `
@@ -237,35 +242,38 @@ export function renderSetupRoutes(main, ctx) {
           </div>
         </div>
         <div class="r2-ckpt-actions">
-          <button class="btn tiny" type="button" data-edit="${l.id}" ${ended ? 'disabled' : ''}><span class="mi mi-sm">edit</span> Edit</button>
+          <button class="btn tiny" type="button" data-edit="${l.id}"><span class="mi mi-sm">edit</span> Edit</button>
           ${draft ? `<button class="btn tiny danger" type="button" data-del="${l.id}" aria-label="Delete ${esc(l.code)}"><span class="mi mi-sm">delete</span> Delete</button>` : ''}
         </div>
       </div>`;
   }
 
   function render() {
-    const draft = event.status === 'DRAFT';
-    const ended = event.status === 'ENDED';
+    const draft = !inUse; // no locked or running event: the set of checkpoints may change
     const inGame = locations.filter((l) => l.is_selected);
     const freeCodes = CODES.filter((c) => !locations.some((l) => l.code === c));
     const countOk = inGame.length >= MIN_IN_GAME && inGame.length <= MAX_IN_GAME;
-    main.querySelector('#status').innerHTML = pill(event.status);
+    main.querySelector('#status').innerHTML = inUse ? pill(inUse.status, `Locked: game ${inUse.status}`) : pill('DRAFT', 'Editable');
     addBtn.hidden = !(draft && freeCodes.length);
 
     box.innerHTML = `
-      ${draft ? '' : `<div class="r2-banner-note warn">${ended
-        ? 'The event has ended, so its checkpoints are read-only.'
-        : `The event is <strong>${esc(event.status)}</strong>: checkpoints can't be added, deleted or moved in or out of the game now, but names, GPS points and photos can still be fixed. To set up another hunt, create an event on the <a href="#/events">Events</a> page (it can copy this one).`}</div>`}
+      ${draft ? '' : `<div class="r2-banner-note warn">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <div style="flex:1;min-width:220px;">The game is <strong>${esc(inUse.status)}</strong> and its routes are built on these checkpoints, so none can be added, deleted or moved in or out of the game right now. Names, GPS points and photos can still be fixed.</div>
+          ${inUse.status === 'CONFIGURED'
+            ? '<button class="btn primary" type="button" id="unlock-game"><span class="mi">lock_open</span> Unlock the game</button>'
+            : '<a class="btn" href="#/dashboard"><span class="mi">restart_alt</span> Restart it on the dashboard first</a>'}
+        </div></div>`}
       ${draft && !freeCodes.length ? '<div class="r2-banner-note info">All 15 checkpoint codes are used. Delete one to add another.</div>' : ''}
       <div class="r2-ckpt-summary">
         ${pill(countOk ? 'LIVE' : 'DISQUALIFIED', `${inGame.length} in the game`)}
         <span class="muted">need ${MIN_IN_GAME}-${MAX_IN_GAME}</span>
         <span>${locations.length}/15 checkpoints</span>
       </div>
-      ${locations.length ? `<div class="r2-ckpt-list">${locations.map((l) => card(l, draft, ended)).join('')}</div>` : `
+      ${locations.length ? `<div class="r2-ckpt-list">${locations.map((l) => card(l, draft)).join('')}</div>` : `
         <div class="empty-state"><div class="empty-icon"><span class="mi mi-xl">add_location_alt</span></div>
           No checkpoints yet. Go to the first spot and tap <strong>+</strong>.</div>`}
-      <p class="r2-hint-text" style="margin-top:14px;">The Jack, Queen and King are dealt to each team separately when you generate routes on the <a href="#/routes">Routes</a> page - nothing to set here.</p>`;
+      <p class="r2-hint-text" style="margin-top:14px;">These checkpoints outlive any single run: if a game goes wrong, <em>Restart game</em> on the dashboard (then <em>Unlock</em> if the set-up needs changing) and generate routes again - the same spots and the QR stickers already on the walls carry over. The Jack, Queen and King are dealt to each team separately when routes are generated on the <a href="#/routes">Routes</a> page.</p>`;
 
     box.querySelectorAll('[data-photo]').forEach((btn) => {
       const loc = locations.find((l) => l.id === btn.dataset.photo);
@@ -277,6 +285,11 @@ export function renderSetupRoutes(main, ctx) {
     });
     box.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openEdit(locations.find((l) => l.id === b.dataset.edit))));
     box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => remove(locations.find((l) => l.id === b.dataset.del))));
+    const unlock = box.querySelector('#unlock-game');
+    if (unlock) unlock.addEventListener('click', async () => {
+      if (!(await confirmModal('Unlock the game and go back to DRAFT? Teams keep their logins; routes are kept until you regenerate them, and you will need to Lock again before starting.', { okLabel: 'Unlock' }))) return;
+      if (await guarded(() => api.admin.transition(inUse.id, 'unlock'), 'Game unlocked - checkpoints can be changed')) load();
+    });
   }
 
   function openAdd() {
@@ -298,7 +311,7 @@ export function renderSetupRoutes(main, ctx) {
       submitLabel: 'Add',
       onClose: () => { stopGps(); if (picker) picker.dispose(); },
       onSubmit: async (fd) => {
-        const created = await guarded(() => api.admin.createLocation(ctx.eventId, {
+        const created = await guarded(() => api.admin.createCheckpoint({
           code: fd.get('code'),
           name: String(fd.get('name')).trim(),
           latitude: Number(fd.get('latitude')),
@@ -310,7 +323,7 @@ export function renderSetupRoutes(main, ctx) {
         const { photo } = picker.get();
         if (photo) {
           try {
-            await api.admin.setLocationPhoto(ctx.eventId, created.id, photo.full, photo.thumb);
+            await api.admin.setCheckpointPhoto(created.id, photo.full, photo.thumb);
           } catch (err) {
             toast(`${created.code} was added, but the photo didn't upload (${err.message}). Add it with Edit.`, { error: true, duration: 7000 });
             load();
@@ -328,7 +341,7 @@ export function renderSetupRoutes(main, ctx) {
   }
 
   function openEdit(loc) {
-    const draft = event.status === 'DRAFT';
+    const draft = !inUse;
     let stopGps = () => {};
     let picker = null;
     const { el } = openModal(`Edit ${loc.code}`, `
@@ -356,11 +369,11 @@ export function renderSetupRoutes(main, ctx) {
         if (longitude !== loc.longitude) patch.longitude = longitude;
         if (radius !== loc.geofence_radius_m) patch.geofence_radius_m = radius;
         if (draft && (fd.get('is_selected') === 'on') !== loc.is_selected) patch.is_selected = fd.get('is_selected') === 'on';
-        if (Object.keys(patch).length && !(await guarded(() => api.admin.updateLocation(ctx.eventId, loc.id, patch)))) return false;
+        if (Object.keys(patch).length && !(await guarded(() => api.admin.updateCheckpoint(loc.id, patch)))) return false;
         const { photo, remove: dropPhoto } = picker.get();
         try {
-          if (photo) await api.admin.setLocationPhoto(ctx.eventId, loc.id, photo.full, photo.thumb);
-          else if (dropPhoto && loc.has_photo) await api.admin.deleteLocationPhoto(ctx.eventId, loc.id);
+          if (photo) await api.admin.setCheckpointPhoto(loc.id, photo.full, photo.thumb);
+          else if (dropPhoto && loc.has_photo) await api.admin.deleteCheckpointPhoto(loc.id);
         } catch (err) {
           toast(`Saved, but the photo change failed (${err.message}).`, { error: true, duration: 6000 });
           load();
@@ -380,8 +393,8 @@ export function renderSetupRoutes(main, ctx) {
   }
 
   async function remove(loc) {
-    const ok = await confirmModal(`Delete ${loc.code} · ${loc.name}? Its puzzle and photo are deleted too, and routes must be regenerated.`, { okLabel: 'Delete', danger: true });
-    if (ok && (await guarded(() => api.admin.deleteLocation(ctx.eventId, loc.id), `${loc.code} deleted`))) load();
+    const ok = await confirmModal(`Delete ${loc.code} · ${loc.name} from the library? Its photo goes with it, and every draft event's routes must be regenerated.`, { okLabel: 'Delete', danger: true });
+    if (ok && (await guarded(() => api.admin.deleteCheckpoint(loc.id), `${loc.code} deleted`))) load();
   }
 
   function showPhoto(loc) {

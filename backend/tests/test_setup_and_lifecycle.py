@@ -215,16 +215,41 @@ def test_dashboard_shows_everything_to_coordinators(client):
     assert dash["counts"]["teams"] == 6 and dash["recent"]
 
 
-def test_clone_event_copies_setup_with_fresh_qr_codes(client):
-    demo = seed(client)
-    res = client.post(f"{API}/admin/events", json={"name": "Round 2 - 2027", "clone_from_event_id": demo.event_id}, headers=demo.admin)
-    assert res.status_code == 201
-    new_id = res.json()["id"]
-    old_locs = {l["code"]: l for l in client.get(f"{API}/admin/events/{demo.event_id}/locations", headers=demo.admin).json()}
-    new_locs = {l["code"]: l for l in client.get(f"{API}/admin/events/{new_id}/locations", headers=demo.admin).json()}
-    assert set(old_locs) == set(new_locs)
-    assert all(old_locs[c]["qr_token"] != new_locs[c]["qr_token"] for c in old_locs)
-    assert all(new_locs[c]["puzzle_type"] == old_locs[c]["puzzle_type"] for c in new_locs)
+def test_one_game_reuses_the_checkpoint_library_run_after_run(client):
+    """A broken run is ended and reset: the same checkpoints, routes
+    generated again, the same QR stickers on the walls."""
+    demo = seed(client, start=True)
+    assert client.get(f"{API}/admin/event", headers=demo.admin).json()["id"] == demo.event_id  # the one game
+    library = {l["code"]: l for l in client.get(f"{API}/admin/checkpoints", headers=demo.admin).json()}
+    assert len(library) == 10 and sum(l["is_selected"] for l in library.values()) == 8
+    # While an event is running the set of checkpoints is frozen...
+    in_use = client.get(f"{API}/admin/checkpoints/in-use", headers=demo.admin).json()["event"]
+    assert in_use["id"] == demo.event_id and in_use["status"] == "LIVE"
+    l09 = library["L09"]
+    blocked = client.patch(f"{API}/admin/checkpoints/{l09['id']}", json={"is_selected": True}, headers=demo.admin)
+    assert blocked.status_code == 409 and "LIVE" in blocked.json()["detail"]
+    assert client.delete(f"{API}/admin/checkpoints/{l09['id']}", headers=demo.admin).status_code == 409
+    assert client.post(f"{API}/admin/checkpoints/{l09['id']}/regenerate-qr", headers=demo.admin).status_code == 409
+    # ...but a name or GPS point can be fixed on the day.
+    assert client.patch(f"{API}/admin/checkpoints/{l09['id']}", json={"name": "Innovation Hub (side door)"}, headers=demo.admin).status_code == 200
+
+    # Something went wrong: end it, reset it, unlock it - the library is editable again...
+    eid = demo.event_id
+    client.post(f"{API}/admin/events/{eid}/end", headers=demo.admin)
+    assert client.get(f"{API}/admin/checkpoints/in-use", headers=demo.admin).json()["event"] is None  # ended: not in use
+    assert client.post(f"{API}/admin/events/{eid}/restart", headers=demo.admin).status_code == 200  # -> CONFIGURED
+    assert client.post(f"{API}/admin/events/{eid}/unlock", headers=demo.admin).status_code == 200  # -> DRAFT
+    assert client.get(f"{API}/admin/checkpoints/in-use", headers=demo.admin).json()["event"] is None
+    assert client.patch(f"{API}/admin/checkpoints/{l09['id']}", json={"is_selected": True}, headers=demo.admin).status_code == 200
+    assert client.patch(f"{API}/admin/checkpoints/{l09['id']}", json={"is_selected": False}, headers=demo.admin).status_code == 200
+    # ...and the same checkpoints and stickers route the next run.
+    again = {l["code"]: l for l in client.get(f"{API}/admin/checkpoints", headers=demo.admin).json()}
+    assert {c: l["id"] for c, l in again.items()} == {c: l["id"] for c, l in library.items()}  # the very same rows
+    assert all(again[c]["qr_token"] == library[c]["qr_token"] for c in library)  # stickers still valid
+    routes = client.post(f"{API}/admin/events/{eid}/routes/generate", headers=demo.admin).json()
+    assert {s["code"] for s in routes["teams"][0]["stops"]} == {c for c, l in library.items() if l["is_selected"]}
+    assert client.post(f"{API}/admin/events/{eid}/lock", headers=demo.admin).status_code == 200
+    assert client.post(f"{API}/admin/events/{eid}/start", headers=demo.admin).status_code == 200
 
 
 def test_restart_discards_the_run_and_keeps_the_setup(client):

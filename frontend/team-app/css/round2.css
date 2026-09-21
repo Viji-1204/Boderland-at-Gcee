@@ -228,6 +228,14 @@
 .r2-near-title { font-family: var(--font-display); font-weight: 800; font-size: 1.6rem; letter-spacing: .08em; color: var(--bl-green); }
 .r2-near-text { margin: 0; font-size: .9rem; line-height: 1.45; }
 
+/* photo hint: the checkpoint photo, once asked for at the spot */
+.r2-photo-hint-btn.cta-btn { width: 100%; max-width: 340px; gap: 8px; font-size: .82rem; background: #fff; border: 2px solid var(--bl-ink); color: var(--bl-ink); }
+.r2-photo-hint-btn .mono { opacity: .7; font-size: .75rem; }
+.r2-hint-off { display: flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--bl-gray); }
+.r2-hint-photo { width: 100%; max-width: 340px; border: 1.5px solid var(--bl-ink); border-radius: 14px; padding: 10px 12px 12px; background: #fff; display: grid; gap: 8px; text-align: left; }
+.r2-hint-img { min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.r2-hint-img img { display: block; width: 100%; height: auto; border-radius: 10px; }
+
 /* locked: a plain card with the one thing to do next */
 .r2-locked-card { width: 100%; max-width: 340px; padding: 22px 18px; border-radius: 18px; border: 1.5px solid var(--bl-hairline); background: #fff; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .r2-locked-card.cold { border-color: var(--bl-frost); background: rgba(96, 165, 250, .08); }

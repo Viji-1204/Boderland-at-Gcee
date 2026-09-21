@@ -14,7 +14,7 @@
 import { api } from '../../../shared/js/api.js';
 import { HEADERS } from '../../../shared/js/copy.js';
 import { glyphSVG } from '../../../shared/js/suit-icons.js';
-import { esc, formatClock } from '../../../shared/js/ui.js';
+import { esc, formatClock, toast } from '../../../shared/js/ui.js';
 import { bindChrome, headerHTML, navHTML } from '../chrome.js';
 import { onState } from '../live.js';
 
@@ -68,6 +68,8 @@ export function renderRadar(root, navigate) {
   let geoError = '';
   let shownAngle = 0; // the arrow's cumulative rotation, so it never spins the long way round
   let view = ''; // which layout is on screen, to avoid rebuilding it every tick
+  let hintUrl = null; // object URL of the revealed checkpoint photo
+  let hintBusy = false;
   const iosCompass = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
   let compassAsked = false;
 
@@ -130,7 +132,56 @@ export function renderRadar(root, navigate) {
       </div>`;
   }
 
+  function hintPanelHTML(r) {
+    const h = r.photo_hint;
+    if (!h || r.is_final) return '';
+    if (h.revealed) {
+      return `
+        <div class="r2-hint-photo" id="hint-photo">
+          <div class="r2-eyebrow">PHOTO OF THE SPOT · ${h.remaining} hint${h.remaining === 1 ? '' : 's'} left</div>
+          <div class="r2-hint-img"><div class="spinner"></div></div>
+        </div>`;
+    }
+    if (h.usable_here) {
+      return `
+        <button class="cta-btn ghost r2-photo-hint-btn" id="hint-btn" type="button">
+          ${glyphSVG('camera', { size: 18, stroke: 2 })} CAN'T FIND IT? SHOW ME A PHOTO <span class="mono">(${h.remaining} left)</span>
+        </button>`;
+    }
+    return h.reason ? `<div class="r2-hint-off">${glyphSVG('camera', { size: 14, stroke: 2 })} ${esc(h.reason)}</div>` : '';
+  }
+
+  async function loadHintPhoto() {
+    const box = mainEl.querySelector('#hint-photo .r2-hint-img');
+    if (!box) return;
+    try {
+      if (hintUrl) URL.revokeObjectURL(hintUrl);
+      hintUrl = URL.createObjectURL(await api.team.photoHintImage());
+      box.innerHTML = `<img src="${hintUrl}" alt="Photo of the checkpoint" />`;
+    } catch (err) {
+      box.innerHTML = `<p class="muted" style="font-size:.8rem;">${esc(err.message)}</p>`;
+    }
+  }
+
+  async function askForHint() {
+    if (hintBusy) return;
+    hintBusy = true;
+    try {
+      const res = await api.team.photoHint(pos ? { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy } : {});
+      toast(res.message, { success: true });
+      view = ''; // rebuild the near card with the photo
+      await poll();
+    } catch (err) {
+      toast(err.message, { error: true, duration: 5000 });
+    } finally {
+      hintBusy = false;
+    }
+  }
+
   function wireButtons() {
+    const hint = mainEl.querySelector('#hint-btn');
+    if (hint) hint.addEventListener('click', askForHint);
+    if (mainEl.querySelector('#hint-photo')) loadHintPhoto();
     const scan = mainEl.querySelector('#scan-btn');
     if (scan) scan.addEventListener('click', () => navigate('#/scan'));
     const compass = mainEl.querySelector('#compass-btn');
@@ -183,7 +234,8 @@ export function renderRadar(root, navigate) {
 
   function renderActive(r) {
     const near = Boolean(r.near);
-    const key = `active:${near ? 'near' : 'far'}:${r.guided ? 'g' : ''}:${iosCompass && !compassAsked && compassHeading == null ? 'c' : ''}`;
+    const ph = r.photo_hint || {};
+    const key = `active:${near ? 'near' : 'far'}:${r.guided ? 'g' : ''}:${iosCompass && !compassAsked && compassHeading == null ? 'c' : ''}:${ph.revealed ? 'p' : ph.usable_here ? 'u' : ph.reason || ''}`;
     if (view !== key) {
       view = key;
       mainEl.innerHTML = near
@@ -193,6 +245,7 @@ export function renderRadar(root, navigate) {
             <div class="r2-near-title">YOU'RE HERE</div>
             <p class="r2-near-text">${r.is_final ? 'Find the coordinators and the Joker!' : 'The checkpoint is within a few steps. Look around for the QR sticker and scan it.'}</p>
           </div>
+          ${hintPanelHTML(r)}
           ${guidePanelHTML(r)}
           ${buttonsHTML(r, true)}`
         : `
@@ -330,6 +383,7 @@ export function renderRadar(root, navigate) {
     clearInterval(pollTimer);
     clearInterval(clockTimer);
     stopGps();
+    if (hintUrl) URL.revokeObjectURL(hintUrl);
     window.removeEventListener('deviceorientationabsolute', onOrientation, true);
     window.removeEventListener('deviceorientation', onOrientation, true);
   };

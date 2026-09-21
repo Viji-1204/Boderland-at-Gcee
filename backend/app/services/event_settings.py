@@ -18,6 +18,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "starting_power_points": 100,
     "allow_attack_frozen": False,
     "puzzle_cooldown_s": 3,
+    "photo_hints_per_team": 2,  # checkpoint photos a team may ask for when standing at the spot
+    "photo_hint_locked_last": 3,  # ...never on the last N checkpoints of its route
 }
 
 # key -> (type, min, max) for numbers, (bool,) for flags, ("choice", options) for enums
@@ -33,6 +35,8 @@ _SPECS: dict[str, tuple] = {
     "starting_power_points": (int, 0, 100000),
     "allow_attack_frozen": (bool,),
     "puzzle_cooldown_s": (int, 0, 120),
+    "photo_hints_per_team": (int, 0, 9),
+    "photo_hint_locked_last": (int, 0, 9),
 }
 
 

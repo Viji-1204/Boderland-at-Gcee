@@ -21,7 +21,7 @@ from app.schemas.schemas import (
     TeamCreateIn,
     TeamPatchIn,
 )
-from app.services import audit, export_service, team_import_service
+from app.services import audit, export_service, sentences, team_import_service
 from app.services.event_settings import event_settings
 
 router = APIRouter(prefix="/admin", tags=["admin-teams"])
@@ -89,7 +89,8 @@ def create_team(event_id: str, payload: TeamCreateIn, admin: Admin = Depends(get
         leader_name=(payload.leader_name or "").strip() or None,
         leader_phone=team_import_service.normalise_phone(payload.leader_phone) or None,
         leader_email=(payload.leader_email or "").strip() or None,
-        sentence=(payload.sentence or "").strip() or None,
+        # Typed by the coordinator, or dealt from the pool - a different one per team.
+        sentence=(payload.sentence or "").strip() or sentences.deal(db, event.id),
         status=TeamStatus.NOT_STARTED,
         power_points=int(event_settings(event)["starting_power_points"]),
     )
@@ -98,6 +99,18 @@ def create_team(event_id: str, payload: TeamCreateIn, admin: Admin = Depends(get
     audit.log_admin(db, admin, event.id, "TEAM_CREATED", f"{team.team_code} {team.team_name}", team.id)
     db.commit()
     return {**team_out(team), "password": password}
+
+
+@router.post("/events/{event_id}/teams/deal-sentences")
+def deal_sentences(event_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Give every team that has no secret sentence one from the pool."""
+    event = load_event(db, event_id)
+    _draft_only(event, "Sentences can change")
+    count = sentences.fill_missing(db, event.id)
+    if count:
+        audit.log_admin(db, admin, event.id, "SENTENCES_DEALT", f"{count} team(s)")
+    db.commit()
+    return {"dealt": count, "message": f"Dealt a sentence to {count} team(s)." if count else "Every team already has a sentence."}
 
 
 @router.patch("/events/{event_id}/teams/{team_id}")

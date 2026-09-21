@@ -16,6 +16,7 @@ from app.models.models import (  # noqa: F401 - re-exported, and registers every
     PowerUsage,
     Puzzle,
     PuzzleAttempt,
+    PhotoHint,
     PuzzleSession,
     RouteStop,
     Scan,

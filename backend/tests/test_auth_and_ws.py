@@ -29,7 +29,7 @@ def test_login_is_throttled_after_repeated_failures(client):
 def test_tokens_cannot_cross_roles(client):
     demo = seed(client)
     team_headers = demo.teams["Dragon Warriors"]["headers"]
-    assert client.get(f"{API}/admin/events", headers=team_headers).status_code == 401
+    assert client.get(f"{API}/admin/event", headers=team_headers).status_code == 401
     assert client.get(f"{API}/me/state", headers=demo.admin).status_code == 401
     assert client.get(f"{API}/me/state").status_code == 401
 
@@ -42,11 +42,11 @@ def test_coordinator_role_limits(client):
     coord = {"Authorization": f"Bearer {login['access_token']}"}
     assert client.get(f"{API}/admin/events/{demo.event_id}/dashboard", headers=coord).status_code == 200
     assert client.get(f"{API}/admin/admins", headers=coord).status_code == 403
-    assert client.post(f"{API}/admin/events", json={"name": "x"}, headers=coord).status_code == 403
+    assert client.get(f"{API}/admin/event", headers=coord).status_code == 200  # the one game is theirs to run
     # deactivation takes effect immediately, even for an issued token
     admin_id = res.json()["admin_id"]
     assert client.delete(f"{API}/admin/admins/{admin_id}", headers=demo.admin).status_code == 204
-    assert client.get(f"{API}/admin/events", headers=coord).status_code == 401
+    assert client.get(f"{API}/admin/event", headers=coord).status_code == 401
 
 
 def test_websocket_rejects_bad_tokens(client):

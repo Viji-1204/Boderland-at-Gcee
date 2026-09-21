@@ -36,7 +36,7 @@
     overflow-y: visible;
   }
   .admin-main {
-    height: calc(100vh - 60px);
+    height: auto;
     overflow-y: auto;
   }
   .admin-nav .brand { padding: 0 8px 0 0; font-size: 1.3rem; }

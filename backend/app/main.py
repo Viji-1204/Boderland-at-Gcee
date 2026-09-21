@@ -78,6 +78,7 @@ if settings.cors_origin_list:
 
 for router in (auth, teams, scan, puzzle, radar, power, leaderboard, admin, admin_setup, admin_teams):
     app.include_router(router.router, prefix=API_PREFIX)
+app.include_router(admin_setup.library, prefix=API_PREFIX)
 app.include_router(ws_router.router)
 
 

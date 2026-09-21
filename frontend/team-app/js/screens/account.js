@@ -29,7 +29,6 @@ export function renderAccount(root, navigate) {
           ${t.leader_name ? `<div class="muted" style="margin-top:8px;font-size:.85rem;">Leader: ${esc(t.leader_name)}</div>` : ''}
         </div>
         <div class="r2-panel">
-          <div class="r2-row" style="margin-bottom:10px;"><span class="r2-eyebrow">Event</span><span>${esc(s.event.name)}</span></div>
           <div class="r2-row" style="margin-bottom:10px;"><span class="r2-eyebrow">Game</span><span class="r2-pill ${s.event.status}">${esc(EVENT_STATUS[s.event.status].en)}</span></div>
           <div class="r2-row"><span class="r2-eyebrow">Your team</span><span class="r2-pill ${t.status}">${esc((TEAM_STATUS[t.status] || { en: t.status }).en)}</span></div>
         </div>

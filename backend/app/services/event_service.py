@@ -17,7 +17,7 @@ from app.models import (
     GameEvent,
     IdempotencyRecord,
     Location,
-    LocationPhoto,
+    PhotoHint,
     Power,
     PowerKind,
     PowerUsage,
@@ -29,7 +29,7 @@ from app.models import (
     TeamStatus,
     UsageStatus,
 )
-from app.services import audit
+from app.services import audit, sentences
 from app.services.event_settings import event_settings, validate_settings_patch
 from app.services.geo import valid_coordinate
 from app.services.route_service import (
@@ -74,45 +74,21 @@ def ensure_status(event: Event, *allowed: str, action: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def create_event(db: Session, admin: Admin, name: str, clone_from: Event | None = None) -> Event:
-    event = Event(name=name.strip(), status=EventStatus.DRAFT, settings={})
-    db.add(event)
-    db.flush()
+DEFAULT_EVENT_NAME = "Borderland @ GCEE - Round 2"
 
-    if clone_from is not None:
-        event.settings = dict(clone_from.settings or {})
-        event.final_location_name = clone_from.final_location_name
-        event.final_latitude = clone_from.final_latitude
-        event.final_longitude = clone_from.final_longitude
-        for src in db.scalars(select(Location).where(Location.event_id == clone_from.id)):
-            loc = Location(
-                event_id=event.id,
-                code=src.code,
-                name=src.name,
-                latitude=src.latitude,
-                longitude=src.longitude,
-                geofence_radius_m=src.geofence_radius_m,
-                is_selected=src.is_selected,
-                qr_token=new_qr_token(db),  # fresh codes: never reuse last event's printouts
-            )
-            db.add(loc)
-            db.flush()
-            if src.photo is not None:  # same campus spot, same reference photo
-                loc.photo = LocationPhoto(
-                    content_type=src.photo.content_type,
-                    data=src.photo.data,
-                    thumb_content_type=src.photo.thumb_content_type,
-                    thumb=src.photo.thumb,
-                    size_bytes=src.photo.size_bytes,
-                )
-        for src in db.scalars(select(Power).where(Power.event_id == clone_from.id)):
-            db.add(Power(event_id=event.id, kind=src.kind, cost=src.cost, max_per_team=src.max_per_team, active=src.active))
-    else:
+
+def the_event(db: Session) -> Event:
+    """The one game. The app runs a single event: there is no list to pick
+    from and nothing to create - the row appears the first time it is
+    needed, and lives on through Restart / Unlock for the next run."""
+    event = db.scalar(select(Event).order_by(Event.created_at.desc()))
+    if event is None:
+        event = Event(name=DEFAULT_EVENT_NAME, status=EventStatus.DRAFT, settings={})
+        db.add(event)
+        db.flush()
         for kind, (cost, cap) in DEFAULT_POWER_PRICES.items():
             db.add(Power(event_id=event.id, kind=kind, cost=cost, max_per_team=cap, active=True))
-
-    audit.log_admin(db, admin, event.id, "EVENT_CREATED", f"{event.name}" + (f" (copied from {clone_from.name})" if clone_from else ""))
-    db.flush()
+        db.flush()
     return event
 
 
@@ -186,7 +162,7 @@ def split_sentence(sentence: str | None, parts: int) -> list[str] | None:
 
 
 def readiness(db: Session, event: Event) -> list[dict]:
-    locs = selected_locations(db, event.id)
+    locs = selected_locations(db)
     n = len(locs)
     teams = route_teams(db, event.id)
     checks: list[dict] = []
@@ -213,7 +189,8 @@ def readiness(db: Session, event: Event) -> list[dict]:
     problems = route_problems(db, event) if teams else ["No teams yet."]
     add("routes", "Every team has a valid, unique route with its Jack, Queen and King", not problems, "All valid" if not problems else problems[0] + (f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""))
 
-    bad_sentences = [t.team_name for t in teams if split_sentence(t.sentence, n) is None]
+    # A missing sentence is dealt at lock; only a typed one that won't split is a problem.
+    bad_sentences = [t.team_name for t in teams if (t.sentence or "").strip() and split_sentence(t.sentence, n) is None]
     add("sentences", f"Every team's sentence splits into {n} fragments", bool(teams) and not bad_sentences,
         "All set" if teams and not bad_sentences else f"Check: {', '.join(bad_sentences[:4]) or 'no teams'}" + ("..." if len(bad_sentences) > 4 else ""))
 
@@ -235,8 +212,9 @@ def lock(db: Session, event: Event, admin: Admin) -> None:
             "Not ready to lock: " + "; ".join(f"{c['label']} ({c['detail']})" for c in failing),
             extra={"checks": failing},
         )
-    n = len(selected_locations(db, event.id))
+    n = len(selected_locations(db))
     teams = route_teams(db, event.id)
+    sentences.fill_missing(db, event.id)  # nobody starts without a secret sentence
     db.execute(delete(SentenceFragment).where(SentenceFragment.team_id.in_([t.id for t in teams])))
     for team in teams:
         for seq, text in enumerate(split_sentence(team.sentence, n) or [], start=1):
@@ -335,13 +313,13 @@ def restart(db: Session, event: Event, admin: Admin, refund_powers: bool = False
     Kept: checkpoints, routes, start offsets, sentences, prices, settings,
     the admin audit log, and (unless ``refund_powers``) what each team
     bought. Wiped: progress, fouls, scans, puzzles, timers, face cards
-    found, every power use and the game log of the run. Disqualified teams
+    found, photo hints, every power use and the game log of the run. Disqualified teams
     stay disqualified - that was a coordinator's call, not game state.
     """
     ensure_status(event, EventStatus.LIVE, EventStatus.PAUSED, EventStatus.ENDED, action="restart the game")
     teams = list(db.scalars(select(Team).where(Team.event_id == event.id)))
     team_ids = [t.id for t in teams]
-    for model in (PowerUsage, Scan, Foul, GameEvent):
+    for model in (PowerUsage, Scan, Foul, GameEvent, PhotoHint):
         db.execute(delete(model).where(model.event_id == event.id))
     if team_ids:
         for model in (PuzzleSession, IdempotencyRecord):

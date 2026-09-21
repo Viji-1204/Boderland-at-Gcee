@@ -23,6 +23,8 @@
 .r2-event-switch { padding: 12px 16px 14px; border-bottom: 1px solid #eef0f2; }
 .r2-event-switch label { display: block; font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; margin-bottom: 6px; }
 .r2-event-switch select { width: 100%; padding: 7px 8px; border: 1px solid #dee2e6; border-radius: 6px; font-size: .8rem; background: #fff; }
+.r2-game-name { font-size: .82rem; font-weight: 700; color: var(--bl-ink); line-height: 1.3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.r2-game-name .pill { font-size: .6rem; }
 .admin-nav a.disabled { opacity: .45; pointer-events: none; }
 
 /* lifecycle stepper */
@@ -65,10 +67,12 @@
 .r2-feed time { color: #94a3b8; font-family: var(--font-mono); margin-right: 6px; }
 
 .r2-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
-.r2-form-grid label { font-size: .7rem; font-weight: 600; color: #475569; display: flex; flex-direction: column; gap: 4px; }
+.r2-form-grid label { font-size: .7rem; font-weight: 600; color: #475569; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .r2-form-grid input, .r2-form-grid select, .r2-inline-input, textarea.r2-textarea {
   padding: 7px 9px; border: 1px solid #dee2e6; border-radius: 6px; font-size: .8rem; font-family: var(--font-body-en); background: #fff;
 }
+/* a field's intrinsic width must never widen the grid past its card */
+.r2-form-grid input, .r2-form-grid select { width: 100%; min-width: 0; box-sizing: border-box; }
 textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizing: border-box; }
 .r2-hint-text { font-size: .74rem; color: #64748b; margin: 6px 0 0; }
 .dtable td input.r2-inline-input { width: 100%; box-sizing: border-box; }
@@ -144,26 +148,73 @@ textarea.r2-textarea { width: 100%; min-height: 70px; resize: vertical; box-sizi
   .r2-qr-sheet { grid-template-columns: repeat(3, 1fr); }
 }
 
-/* Phones: Round 1's admin.css meant the menu to become a top bar here, but
-   its later sidebar rules override that, so the menu filled the screen and
-   hid the page. The menu becomes one scrollable row above the content. */
+/* ---- Responsive shell -------------------------------------------------------
+   Desktop: sidebar + fluid content (centred, up to 1600px wide). Tablet: a
+   narrower sidebar. Phone: the menu becomes a top bar - the event switcher
+   on its own row, the page links in one scrolling row underneath. ---- */
+
+/* desktop: use the whole width instead of a 1200px left-aligned column */
+.admin-main { max-width: none; padding-left: clamp(16px, calc((100% - 1600px) / 2), 999px); padding-right: clamp(16px, calc((100% - 1600px) / 2), 999px); }
+.admin-nav-links { display: flex; flex-direction: column; }
+.r2-logout-mini { display: none; }
+
+/* wide tables scroll in their own box (admin.js wraps every .dtable) */
+.r2-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; scrollbar-width: thin; }
+.r2-table-scroll > .dtable { min-width: 100%; }
+
+@media (max-width: 1100px) {
+  .admin-shell { grid-template-columns: 196px 1fr; }
+  .admin-nav a { padding: 8px 14px; font-size: .78rem; }
+  .admin-nav .brand { padding: 16px 14px 10px; }
+  .admin-main { padding: 20px 18px 36px; }
+  .stats-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+}
+
 @media (max-width: 860px) {
   .admin-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .r2-tabs { flex-wrap: wrap; }
+  .r2-tabs .btn { flex: 1 1 auto; justify-content: center; }
   .admin-nav {
-    flex: none; flex-direction: row; align-items: center; gap: 2px;
-    height: auto; overflow-x: auto; overflow-y: hidden;
-    padding: 4px 6px; border-right: none; border-bottom: 1px solid #dee2e6; box-shadow: none;
-    scrollbar-width: thin;
+    flex: none; display: flex; flex-direction: column; gap: 0;
+    height: auto; overflow: visible; padding: 0;
+    border-right: none; border-bottom: 1px solid #dee2e6; box-shadow: 0 1px 4px rgba(0, 0, 0, .05);
   }
   .admin-nav .brand { display: none; }
-  .admin-nav a { flex: none; white-space: nowrap; padding: 10px 10px; border-left: none; border-bottom: 3px solid transparent; }
-  .admin-nav a:hover { border-left-color: transparent; }
-  .admin-nav a.active { border-bottom-color: var(--bl-ink); }
-  .r2-event-switch { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px; border-bottom: none; }
-  .r2-event-switch label { margin: 0; }
-  .r2-event-switch select { width: auto; max-width: 190px; }
-  .admin-nav .role-tag { flex: none; margin: 0 0 0 6px; padding: 8px 10px; border-top: none; white-space: nowrap; }
-  .admin-main { flex: 1; min-height: 0; height: auto; max-width: none; overflow-y: auto; }
+  .admin-nav .role-tag { display: none; }
+  .r2-event-switch { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #eef0f2; }
+  .r2-event-switch label { margin: 0; flex: none; }
+  .r2-event-switch select { flex: 1; min-width: 0; width: auto; }
+  .r2-game-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .r2-game-name .pill { margin-left: 6px; }
+  .r2-logout-mini { display: flex; flex: none; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; border: 1px solid #dee2e6; background: #fff; color: var(--bl-red); }
+  .admin-nav-links { flex-direction: row; gap: 2px; padding: 2px 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .admin-nav-links a { flex: none; white-space: nowrap; padding: 10px 10px; border-left: none; border-bottom: 3px solid transparent; font-size: .8rem; }
+  .admin-nav-links a:hover { border-left-color: transparent; }
+  .admin-nav-links a.active { border-bottom-color: var(--bl-ink); background: transparent; }
+  .admin-main { flex: 1; min-height: 0; height: auto; max-width: none; overflow-y: auto; padding: 14px 12px 40px; }
+  .admin-h1 { font-size: 1.2rem; }
+  .admin-topline { margin-bottom: 14px; }
+  .stats-row { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+  .stat-card { padding: 10px 12px; }
+  .stat-card > div:last-child { font-size: 1.3rem !important; }
+  .dash-card { padding: 14px; }
+  .dtable { font-size: .78rem; }
+  .dtable th, .dtable td { white-space: nowrap; padding: 8px 8px; }
+  .r2-ckpt-list { grid-template-columns: 1fr; }
+  .r2-fab { right: 16px; bottom: 16px; }
+  .r2-team-grid { grid-template-columns: 1fr; }
+  .r2-step { min-width: 0; flex: 1 1 30%; font-size: .66rem; padding: 7px 6px; }
+  .modal-backdrop { padding: 10px; align-items: flex-end; }
+  .modal { padding: 18px 16px; max-height: 92vh !important; border-radius: 14px 14px 10px 10px; }
+  .r2-form-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+
+@media (max-width: 480px) {
+  .stats-row { grid-template-columns: repeat(3, 1fr); }
+  .stat-card .section-header { font-size: .68rem; }
+  .r2-form-grid { grid-template-columns: 1fr 1fr; }
+  .r2-form-grid label.r2-check { grid-column: 1 / -1; }
+  .r2-form-grid > div[style*="grid-column"] .btn { width: 100%; justify-content: center; }
 }
 
 /* Puzzles page: the six built-in types */

@@ -30,7 +30,7 @@ from app.models import (
     TeamStatus,
     UsageStatus,
 )
-from app.services import power_service, results_service
+from app.services import hint_service, power_service, results_service
 from app.services.event_settings import event_settings
 from app.services.geo import maps_directions_url
 from app.services.scan_service import current_puzzle, effective_status, is_guided, is_jammed, is_warded, team_route
@@ -177,6 +177,7 @@ def team_state(db: Session, event: Event, team: Team, now: datetime) -> dict:
         "fragments": fragments,
         "fragments_total": total,
         "puzzle": current_puzzle(db, event, team, now),
+        "photo_hint": hint_service.status(db, event, team),
         "powers": _powers_block(db, event, team, now),
         "incoming_attack": (
             {"usage_id": incoming.id, "kind": incoming.kind, "effect": power_service.attack_effect_text(event, incoming.kind), "expires_at": iso(incoming.expires_at)}
@@ -255,6 +256,7 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
     powers_left: dict[str, dict] = {}
     for tid in team_ids:
         powers_left[tid] = {k: v.remaining for k, v in power_service.inventory(db, tid).items()}
+    hints_used = hint_service.hint_rows(db, event.id)
 
     rows = []
     counts = {"teams": len(teams), "playing": 0, "frozen": 0, "jammed": 0, "puzzle": 0, "final": 0, "completed": 0, "disqualified": 0}
@@ -309,6 +311,7 @@ def dashboard(db: Session, event: Event, now: datetime) -> dict:
                 "effects": _effects(t, now),
                 "completed_at": iso(t.completed_at),
                 "puzzle_attempts": attempts.get(t.id, 0),
+                "photo_hints_used": hints_used.get(t.id, 0),
                 "incoming_attack": {"kind": attack.kind, "expires_at": iso(attack.expires_at)} if attack else None,
                 "incoming_attack_expires_at": iso(attack.expires_at) if attack else None,
                 "disqualified_reason": t.disqualified_reason,

@@ -83,7 +83,7 @@ export function renderQr(main, ctx) {
           <div class="name">${esc(c.name)} ${c.is_selected ? '' : pill('ENDED', 'not in game')}</div>
           <div class="img">${img}</div>
           <div class="token">${esc(c.token)}</div>
-          <div class="brand-line">Borderland @ GCEE · Round 2 · ${esc(data.event_name)}</div>
+          <div class="brand-line">Borderland @ GCEE · Round 2</div>
         </div>`;
     }).join('') || '<div class="empty-state">No locations yet.</div>';
   }
@@ -91,7 +91,7 @@ export function renderQr(main, ctx) {
   main.querySelector('#only-selected').addEventListener('change', () => data && render());
   main.querySelector('#print').addEventListener('click', () => window.print());
 
-  Promise.all([api.admin.qrCodes(ctx.eventId), loadQrLib().catch((err) => { note.innerHTML += `<div class="r2-banner-note bad">${esc(err.message)}</div>`; return null; })])
+  Promise.all([api.admin.qrCodes(), loadQrLib().catch((err) => { note.innerHTML += `<div class="r2-banner-note bad">${esc(err.message)}</div>`; return null; })])
     .then(([codes, lib]) => { data = codes; qrcode = lib; renderAppLink(); render(); })
     .catch((err) => { sheet.innerHTML = `<p class="status-note error">${esc(err.message)}</p>`; });
 }

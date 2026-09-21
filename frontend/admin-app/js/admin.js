@@ -1,7 +1,6 @@
 // Coordinator console entry: Round 1's admin router and nav, Round 2 screens.
 import { api, clearToken, getToken, onUnauthorized, syncServerTime } from '../../shared/js/api.js';
 import { esc } from '../../shared/js/ui.js';
-import { getEventId, setEventId } from './common.js';
 import { renderLogin } from './screens/login.js';
 import { renderDashboard } from './screens/dashboard.js';
 import { renderSetup } from './screens/setup.js';
@@ -12,22 +11,20 @@ import { renderTeamsAdmin } from './screens/teams-admin.js';
 import { renderQr } from './screens/qr.js';
 import { renderLogs } from './screens/logs.js';
 import { renderResults } from './screens/results.js';
-import { renderEvents } from './screens/events.js';
 import { renderAdminAccounts } from './screens/admin-accounts.js';
 
 const root = document.getElementById('app');
 
 const SCREENS = {
-  dashboard: { render: renderDashboard, label: 'Live Dashboard', icon: 'monitoring', event: true },
-  setup: { render: renderSetup, label: 'Event Setup', icon: 'tune', event: true },
-  'setup-routes': { render: renderSetupRoutes, label: 'Setup Routes', icon: 'add_location_alt', event: true },
-  puzzles: { render: renderPuzzles, label: 'Puzzles', icon: 'extension', event: true },
-  routes: { render: renderRoutes, label: 'Routes', icon: 'route', event: true },
-  teams: { render: renderTeamsAdmin, label: 'Teams', icon: 'group', event: true },
-  qr: { render: renderQr, label: 'QR Codes', icon: 'qr_code_2', event: true },
-  logs: { render: renderLogs, label: 'Logs', icon: 'receipt_long', event: true },
-  results: { render: renderResults, label: 'Results', icon: 'emoji_events', event: true },
-  events: { render: renderEvents, label: 'Events', icon: 'event' },
+  dashboard: { render: renderDashboard, label: 'Live Dashboard', icon: 'monitoring' },
+  setup: { render: renderSetup, label: 'Game Setup', icon: 'tune' },
+  'setup-routes': { render: renderSetupRoutes, label: 'Setup Routes', icon: 'add_location_alt' },
+  puzzles: { render: renderPuzzles, label: 'Puzzles', icon: 'extension' },
+  routes: { render: renderRoutes, label: 'Routes', icon: 'route' },
+  teams: { render: renderTeamsAdmin, label: 'Teams', icon: 'group' },
+  qr: { render: renderQr, label: 'QR Codes', icon: 'qr_code_2' },
+  logs: { render: renderLogs, label: 'Logs', icon: 'receipt_long' },
+  results: { render: renderResults, label: 'Results', icon: 'emoji_events' },
   admins: { render: renderAdminAccounts, label: 'Admin Accounts', icon: 'admin_panel_settings', superOnly: true },
 };
 
@@ -49,17 +46,15 @@ onUnauthorized((kind) => {
 });
 
 let cleanup = null;
-let events = [];
+let theEvent = null; // the one game; its id addresses every per-game call
 
-async function loadEvents() {
+async function loadEvent() {
   try {
-    events = await api.admin.events();
+    theEvent = await api.admin.theEvent();
   } catch (_) {
-    events = [];
+    theEvent = null;
   }
-  const current = getEventId();
-  if (!events.find((e) => e.id === current)) setEventId(events[0]?.id || '');
-  return events;
+  return theEvent;
 }
 
 async function route() {
@@ -90,23 +85,24 @@ async function route() {
   const screen = SCREENS[name] || SCREENS.dashboard;
   const key = SCREENS[name] ? name : 'dashboard';
 
-  await loadEvents();
-  const eventId = getEventId();
+  await loadEvent();
+  const eventId = theEvent ? theEvent.id : '';
 
   root.className = 'admin-shell mode-light';
   root.innerHTML = `
     <nav class="admin-nav" id="admin-nav">
       <div class="brand">V</div>
       <div class="r2-event-switch">
-        <label for="event-select">Event</label>
-        <select id="event-select">
-          ${events.length ? events.map((e) => `<option value="${e.id}" ${e.id === eventId ? 'selected' : ''}>${esc(e.name)} (${e.status})</option>`).join('') : '<option value="">No events yet</option>'}
-        </select>
+        <label>Game</label>
+        <div class="r2-game-name">${theEvent ? `Round 2 <span class="pill ${theEvent.status}">${esc(theEvent.status)}</span>` : '<span class="bad">Server unreachable</span>'}</div>
+        <button type="button" class="r2-logout-mini" id="logout-mini" title="Log out" aria-label="Log out"><span class="mi">logout</span></button>
       </div>
-      ${Object.entries(SCREENS).map(([k, s]) => `
-        <a href="#/${k}" data-screen="${k}" class="${s.superOnly && role !== 'SUPER_ADMIN' ? 'disabled' : ''}">
-          <span class="nav-icon"><span class="mi">${s.icon}</span></span> ${s.label}
-        </a>`).join('')}
+      <div class="admin-nav-links">
+        ${Object.entries(SCREENS).map(([k, s]) => `
+          <a href="#/${k}" data-screen="${k}" class="${s.superOnly && role !== 'SUPER_ADMIN' ? 'disabled' : ''}">
+            <span class="nav-icon"><span class="mi">${s.icon}</span></span> ${s.label}
+          </a>`).join('')}
+      </div>
       <div class="role-tag">${esc(String(role).replace('_', ' '))} · ${esc(claims.username || '')} · <a href="#" id="logout-link">Log out</a></div>
     </nav>
     <main class="admin-main" id="admin-main"></main>
@@ -114,28 +110,37 @@ async function route() {
   root.querySelectorAll('.admin-nav a[data-screen]').forEach((a) => a.classList.toggle('active', a.dataset.screen === key));
   // On a phone the menu is one scrolling row: bring the current page's tab into view.
   root.querySelector('.admin-nav a.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  root.querySelector('#logout-link').addEventListener('click', (e) => {
+  const logout = (e) => {
     e.preventDefault();
     clearToken('admin');
     navigate('#/login');
-  });
-  root.querySelector('#event-select').addEventListener('change', (e) => {
-    setEventId(e.target.value);
-    route();
-  });
+  };
+  root.querySelector('#logout-link').addEventListener('click', logout);
+  root.querySelector('#logout-mini').addEventListener('click', logout);
 
   const main = root.querySelector('#admin-main');
+  // Wide tables (teams, results, logs...) scroll inside their own box, so
+  // the page itself never scrolls sideways on a phone. Screens render
+  // asynchronously, so watch for tables as they appear.
+  const wrapTables = () => main.querySelectorAll('table.dtable').forEach((table) => {
+    if (table.closest('.r2-table-scroll')) return;
+    const box = document.createElement('div');
+    box.className = 'r2-table-scroll';
+    table.replaceWith(box);
+    box.appendChild(table);
+  });
+  new MutationObserver(wrapTables).observe(main, { childList: true, subtree: true });
   if (screen.superOnly && role !== 'SUPER_ADMIN') {
     main.innerHTML = '<p class="status-note">SUPER_ADMIN only.</p>';
     return;
   }
-  if (screen.event && !eventId) {
-    navigate('#/events');
+  if (!eventId && !screen.superOnly) {
+    main.innerHTML = '<p class="status-note error">The game could not be loaded from the server. Check the connection and refresh.</p>';
     return;
   }
   const ctx = {
     eventId,
-    event: events.find((e) => e.id === eventId) || null,
+    event: theEvent,
     role,
     username: claims.username,
     isSuper: role === 'SUPER_ADMIN',

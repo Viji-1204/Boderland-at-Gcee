@@ -152,7 +152,7 @@ Chrome DevTools (`F12`) → device toolbar (`Ctrl+Shift+M`).
 
 ```powershell
 cd backend
-python -m pytest              # 103 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
+python -m pytest              # 111 tests: rules, the six puzzles, powers, privacy, lifecycle, import, auth, WebSockets, migrations, photos, health
 python full_verification.py   # plays a whole event through the real API and prints each step
 ```
 
@@ -245,6 +245,11 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
   Each team is dealt its own Jack, Queen and King - three of its stops, picked at
   random when routes are generated, met in that order - so teams find them at
   different checkpoints. The generator also spreads teams out.
+- **Photo hints.** A team standing at its checkpoint (radar says YOU'RE HERE) that
+  can't find the sticker can ask for the checkpoint's photo from Setup Routes:
+  twice per game, never on the last three checkpoints (both numbers in Game
+  Setup), and a checkpoint without a photo can't be hinted. Uses show on the
+  dashboard and in the results export.
 - **Radar = one rule: turn until the arrow points up, then walk.** The arrow is
   drawn relative to the way the phone faces (compass; on iPhone after a tap), so
   nobody needs to know where north is. Without a compass it follows the direction
@@ -261,7 +266,7 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
   blacks out their radar (they can still scan), *Trap* plants a foul. Defences:
   *Shield* blocks one attack, *Reflect* blocks it and bounces the effect onto the
   attacker, *Ward* is raised in advance and auto-blocks everything while it lasts.
-  Prices, limits and durations are per event (Admin → Event Setup).
+  Prices, limits and durations are set in Admin → Game Setup.
 - **Real-time:** WebSockets push attacks, freezes and state changes. Every phone
   re-syncs `GET /me/state` on reconnect. All countdowns run on server time.
 - **Retries are safe.** Every action carries an idempotency key, so a flaky
@@ -280,17 +285,21 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    strong `ADMIN_PASSWORD`, and set `ENVIRONMENT=production`.
    Production refuses to start with placeholder secrets. In development, a random
    signing key is generated in `backend/data/.jwt-secret` automatically.
-2. **Event.** Admin → Events → *New event*. *Copy setup from* the demo reuses its
-   structure and generates fresh QR codes.
+2. **The game.** The console runs one game - there is nothing to create or pick.
+   Name it and set its rules in **Game Setup**.
 3. **Checkpoints.** Admin → **Setup Routes**, on a phone at the `https://` address
    (section 3). Walk the campus; at each spot tap **+**. It fills in the GPS point
    (wait for a green "±… m - good"), takes an optional photo, and **Add** saves it.
    The list shows every checkpoint with its map link and photo: **Edit** (name,
    GPS, radius, in the game or spare, photo) or **Delete**. Up to 15 checkpoints,
    7–9 in the game. (The Jack, Queen and King aren't set here - see Routes below.)
-   Adding and deleting need a DRAFT event; names, GPS points and photos can be
-   fixed until the event ends. Photos are admin-only and stored in the database.
-   Set the final (Joker) destination in **Event Setup**.
+   Checkpoints outlive any single run: if a game goes wrong, **Restart game** on
+   the dashboard (then **Unlock** if the set-up must change) and generate routes
+   again - the same spots and the QR stickers already on the walls carry over.
+   While the game is locked or running the *set* of checkpoints is frozen (the
+   routes depend on it); names, GPS points and photos can always be fixed. Photos
+   are admin-only and stored in the database. Set the final (Joker) destination in
+   **Game Setup**.
 4. **Puzzles: nothing to do, they're built in.** Each checkpoint's puzzle follows
    its number and repeats every six (Admin → Puzzles shows the plan):
 
@@ -311,13 +320,16 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    `backend/app/services/puzzles/`; tests check every one.
 5. **Teams.** Admin → Teams → *Import from Sheet*. Upload Round 1's "Round 2
    Qualifiers" export or any registration sheet, review, confirm, and download the
-   login sheet. Give each team a secret sentence (a *Sentence* column in the
-   sheet, or edit per team).
+   login sheet. Every team is dealt a different **secret sentence** automatically
+   (an Alice in Borderland line from a pool of twenty in
+   `backend/app/services/sentences.py`); a *Sentence* column in the sheet, or an
+   edit per team, overrides it.
 6. **Routes.** Admin → Routes → *Generate*. This also deals every team its own
    Jack, Queen and King on three random checkpoints of its route (J/Q/K in the
    table); *Edit* on a row moves a team's route or its cards by hand.
 7. **QR codes.** Admin → QR Codes → Print, from the **public address teams will
-   use**, since the codes link there. Stick each one at its checkpoint.
+   use**, since the codes link there. Stick each one at its checkpoint. Stickers
+   are permanent - they stay valid run after run.
 8. **Dry run** with volunteers the day before. Then Dashboard → **Lock** → **Start**.
    After the dry run (or a false start) press **Restart game** on the dashboard: it
    wipes the run - progress, fouls, scans, puzzles, timers, power uses - and goes back
@@ -354,7 +366,7 @@ Key rules, all enforced on the server (spec sections 10–21, 29):
    dry run on the actual phones and network of the venue.
 2. **HTTPS hosting** for event day (domain + Caddy, or a tunnel) and printed QR codes
    pointing at it.
-3. **Rehearse on the event server:** all 103 tests and the full-event smoke run
+3. **Rehearse on the event server:** all 111 tests and the full-event smoke run
    also pass on Postgres 16 (see *Automated checks*), and the Docker stack runs.
    Still run a dry run on the real server and network.
 4. **Scale-out (only if needed):** several API processes would need Redis for the

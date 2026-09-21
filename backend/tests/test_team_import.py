@@ -90,3 +90,71 @@ def test_template_round_trips_through_the_importer():
     mapping = detect_columns(parsed.headers)
     assert {"team_code", "team_name", "leader_name", "leader_phone", "leader_email"} <= set(mapping)
     assert len(parsed.rows) == 2
+
+
+def test_teams_are_dealt_different_secret_sentences(client):
+    """Nobody has to type a sentence: one is dealt per team, no two alike,
+    from the Alice in Borderland pool - unless the coordinator types one."""
+    from app.services import sentences
+    from app.services.event_service import split_sentence
+
+    demo = seed(client)
+    eid = demo.event_id
+    base = f"{API}/admin/events/{eid}/teams"
+    for t in client.get(base, headers=demo.admin).json():  # start from an empty game
+        client.delete(f"{base}/{t['id']}", headers=demo.admin)
+
+    assert len(sentences.SENTENCES) == 20
+    for line in sentences.SENTENCES:
+        for parts in (7, 8, 9):
+            assert split_sentence(line, parts) is not None, line  # every line splits for 7-9 checkpoints
+
+    dealt = []
+    for i in range(20):
+        res = client.post(base, json={"team_name": f"Team {i:02d}", "password": "1234"}, headers=demo.admin)
+        assert res.status_code == 201, res.text
+        dealt.append(res.json()["sentence"])
+    assert set(dealt) == set(sentences.SENTENCES)  # twenty teams, twenty different sentences
+    # The twenty-first reuses one; a typed sentence is kept as typed.
+    extra = client.post(base, json={"team_name": "Team 21", "password": "1234"}, headers=demo.admin).json()
+    assert extra["sentence"] in sentences.SENTENCES
+    typed = client.post(base, json={"team_name": "Team 22", "password": "1234", "sentence": "MY OWN WORDS ONE TWO THREE FOUR FIVE SIX SEVEN"}, headers=demo.admin).json()
+    assert typed["sentence"] == "MY OWN WORDS ONE TWO THREE FOUR FIVE SIX SEVEN"
+
+
+def test_import_without_a_sentence_column_deals_sentences_too(client):
+    from app.services import sentences
+
+    demo = seed(client)
+    eid = demo.event_id
+    csv_text = "Team Name,Leader Name,Leader Phone\nAlpha Hunters,Arun,9840012345\nBeta Runners,Divya,9841012345\n"
+    files = {"file": ("teams.csv", csv_text.encode(), "text/csv")}
+    preview = client.post(f"{API}/admin/events/{eid}/teams/import/preview", files=files, headers=demo.admin)
+    assert preview.status_code == 200, preview.text
+    rows = [r for r in preview.json()["rows"] if r["status"] == "OK"]
+    assert len(rows) == 2
+    commit = client.post(f"{API}/admin/events/{eid}/teams/import", json={"rows": rows}, headers=demo.admin)
+    assert commit.status_code == 201, commit.text
+    teams = {t["team_name"]: t for t in client.get(f"{API}/admin/events/{eid}/teams", headers=demo.admin).json()}
+    got = [teams["Alpha Hunters"]["sentence"], teams["Beta Runners"]["sentence"]]
+    assert all(s in sentences.SENTENCES for s in got) and got[0] != got[1]
+
+
+def test_lock_deals_a_sentence_to_anyone_still_without_one(client):
+    from app.services import sentences
+
+    demo = seed(client)
+    eid = demo.event_id
+    team_id = demo.teams["Spade Squad"]["id"]
+    client.patch(f"{API}/admin/events/{eid}/teams/{team_id}", json={"sentence": ""}, headers=demo.admin)
+    checks = {c["key"]: c for c in client.get(f"{API}/admin/events/{eid}/readiness", headers=demo.admin).json()}
+    assert checks["sentences"]["ok"] is True  # a missing one isn't a blocker: it is dealt at lock
+    dealt = client.post(f"{API}/admin/events/{eid}/teams/deal-sentences", headers=demo.admin).json()
+    assert dealt["dealt"] == 1  # the button on the Teams page
+    assert client.post(f"{API}/admin/events/{eid}/teams/deal-sentences", headers=demo.admin).json()["dealt"] == 0
+    client.patch(f"{API}/admin/events/{eid}/teams/{team_id}", json={"sentence": ""}, headers=demo.admin)
+    assert client.post(f"{API}/admin/events/{eid}/lock", headers=demo.admin).status_code == 200  # lock deals it too
+    state = client.get(f"{API}/me/state", headers=demo.teams["Spade Squad"]["headers"]).json()
+    assert state["fragments_total"] == 8
+    with_sentence = next(t for t in client.get(f"{API}/admin/events/{eid}/teams", headers=demo.admin).json() if t["id"] == team_id)
+    assert with_sentence["sentence"] in sentences.SENTENCES

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.timeutil import iso
 from app.models import Event, FaceCard, PowerFamily, Team, TeamStatus
-from app.services import power_service
+from app.services import hint_service, power_service
 
 
 def elapsed_seconds(team: Team) -> int | None:
@@ -62,6 +62,7 @@ def public_results(db: Session, event: Event) -> list[dict]:
 
 def coordinator_results(db: Session, event: Event) -> list[dict]:
     usage = power_service.family_usage(db, event.id)
+    hints = hint_service.hint_rows(db, event.id)
     rows = []
     for rank, team in enumerate(ranked_teams(db, event), start=1):
         rows.append(
@@ -80,6 +81,7 @@ def coordinator_results(db: Session, event: Event) -> list[dict]:
                 "attacks_used": usage.get((team.id, PowerFamily.ATTACK), 0),
                 "defences_used": usage.get((team.id, PowerFamily.DEFENCE), 0),
                 "guides_used": usage.get((team.id, PowerFamily.HELP), 0),
+                "photo_hints_used": hints.get(team.id, 0),
                 "started_at": iso(team.started_at),
                 "completed_at": iso(team.completed_at),
                 "leader_name": team.leader_name,

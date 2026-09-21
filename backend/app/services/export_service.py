@@ -157,7 +157,7 @@ def build_results_workbook(*, event_name: str, rows: Sequence[dict], generated_a
         ],
         headers=[
             "Rank", "Team Code", "Team Name", "Status", "Time", "Fouls", "Checkpoints",
-            "Jack", "Queen", "King", "Attacks", "Defences", "Guides",
+            "Jack", "Queen", "King", "Attacks", "Defences", "Guides", "Photo hints",
             "Started (UTC)", "Finished (UTC)", "Leader", "Phone", "Email",
         ],
         rows=[
@@ -165,12 +165,12 @@ def build_results_workbook(*, event_name: str, rows: Sequence[dict], generated_a
                 r["rank"], r["team_code"], r["team_name"], r["status"], format_elapsed(r["elapsed_s"]), r["foul_count"],
                 f"{r['checkpoints']}/{r['total_checkpoints']}",
                 "yes" if r["face_cards"]["JACK"] else "", "yes" if r["face_cards"]["QUEEN"] else "", "yes" if r["face_cards"]["KING"] else "",
-                r["attacks_used"], r["defences_used"], r["guides_used"],
+                r["attacks_used"], r["defences_used"], r["guides_used"], r["photo_hints_used"],
                 r["started_at"], r["completed_at"], r["leader_name"], r["leader_phone"], r["leader_email"],
             ]
             for r in rows
         ],
-        widths=[6, 16, 26, 14, 10, 7, 12, 7, 7, 7, 9, 9, 7, 24, 24, 20, 16, 28],
+        widths=[6, 16, 26, 14, 10, 7, 12, 7, 7, 7, 9, 9, 7, 8, 24, 24, 20, 16, 28],
         highlight_rows=finishers,
     )
     return _workbook_bytes(workbook)

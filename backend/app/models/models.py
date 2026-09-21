@@ -2,8 +2,10 @@
 
 Simplifications versus the spec's representative schema, all deliberate:
 
-* A location's QR token lives on the ``locations`` row (the spec's
-  ``qr_codes`` table was strictly 1:1 with it).
+* Checkpoints (``locations``) are one library shared by every event, not
+  copies per event: a new event reuses the same spots, routes them again,
+  and the QR stickers already on the walls keep working. A location's QR
+  token lives on its row (the spec's ``qr_codes`` table was strictly 1:1).
 * The Jack, Queen and King are dealt per team: each sits on one of the
   team's ``route_stops`` (chosen at random when routes are generated), so
   two teams meet them at different checkpoints. A team's Jack/Queen/King
@@ -154,7 +156,6 @@ class Event(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     teams: Mapped[list["Team"]] = relationship(back_populates="event", cascade="all, delete-orphan", passive_deletes=True)
-    locations: Mapped[list["Location"]] = relationship(back_populates="event", cascade="all, delete-orphan", passive_deletes=True)
 
 
 class Admin(Base):
@@ -170,14 +171,18 @@ class Admin(Base):
 
 
 class Location(Base):
+    """A checkpoint in the shared library (Setup Routes). Not tied to an
+    event: every event's routes are built from the ones marked
+    ``is_selected``, and the QR token is permanent, so a sticker printed
+    once stays valid for every later event."""
+
     __tablename__ = "locations"
     __table_args__ = (
-        UniqueConstraint("event_id", "code", name="uq_location_event_code"),
+        UniqueConstraint("code", name="uq_location_code"),
         UniqueConstraint("qr_token", name="uq_location_qr_token"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
     code: Mapped[str] = mapped_column(String(10))  # L01..L15
     name: Mapped[str] = mapped_column(String(120))
     latitude: Mapped[float] = mapped_column(Float, default=0.0)
@@ -187,7 +192,6 @@ class Location(Base):
     qr_token: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    event: Mapped[Event] = relationship(back_populates="locations")
     puzzle: Mapped["Puzzle | None"] = relationship(back_populates="location", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
     photo: Mapped["LocationPhoto | None"] = relationship(back_populates="location", uselist=False, cascade="all, delete-orphan", passive_deletes=True)
 
@@ -398,6 +402,21 @@ class PuzzleSession(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)  # checked answers / submissions
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     solved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PhotoHint(Base):
+    """A team asked for the photo of its current checkpoint (hint_service):
+    charged once per checkpoint, shown until that checkpoint is scanned."""
+
+    __tablename__ = "photo_hints"
+    __table_args__ = (UniqueConstraint("team_id", "location_id", name="uq_photo_hint_team_location"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"), index=True)
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
+    location_id: Mapped[str] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)  # which stop of the route it was
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

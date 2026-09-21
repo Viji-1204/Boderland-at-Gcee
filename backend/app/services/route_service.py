@@ -36,14 +36,9 @@ MAX_SELECTED = 9
 MAX_POOL = 15
 
 
-def selected_locations(db: Session, event_id: str) -> list[Location]:
-    return list(
-        db.scalars(
-            select(Location)
-            .where(Location.event_id == event_id, Location.is_selected.is_(True))
-            .order_by(Location.code)
-        )
-    )
+def selected_locations(db: Session) -> list[Location]:
+    """The checkpoints in the game - one shared library, so the same for every event."""
+    return list(db.scalars(select(Location).where(Location.is_selected.is_(True)).order_by(Location.code)))
 
 
 def route_teams(db: Session, event_id: str) -> list[Team]:
@@ -139,7 +134,7 @@ def _ensure_draft(event: Event) -> None:
 def generate_routes(db: Session, event: Event, rng: random.Random | None = None) -> dict:
     _ensure_draft(event)
     rng = rng or random.SystemRandom()
-    locs = selected_locations(db, event.id)
+    locs = selected_locations(db)
     _check_pool(locs)
     teams = route_teams(db, event.id)
     if not teams:
@@ -210,7 +205,7 @@ def set_manual_route(
     otherwise gets them dealt at random, like a generated route.
     """
     _ensure_draft(event)
-    locs = selected_locations(db, event.id)
+    locs = selected_locations(db)
     by_id = {loc.id: loc for loc in locs}
     if len(location_ids) != len(set(location_ids)):
         raise AppError("A route can't visit the same location twice.")
@@ -249,7 +244,7 @@ def set_manual_route(
 
 def route_problems(db: Session, event: Event) -> list[str]:
     """Every reason the current routes can't be locked; empty list = all good."""
-    ids = {loc.id for loc in selected_locations(db, event.id)}
+    ids = {loc.id for loc in selected_locations(db)}
     problems: list[str] = []
     seen: dict[tuple[str, ...], str] = {}
     for team in route_teams(db, event.id):

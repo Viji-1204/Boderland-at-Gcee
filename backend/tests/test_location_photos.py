@@ -1,4 +1,5 @@
-"""Checkpoint photos (Setup Routes): kept in the database, admin-only."""
+"""Checkpoint photos (Setup Routes): kept in the database, admin-only. The
+checkpoints are one library shared by every event."""
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -13,8 +14,8 @@ THUMB = b"\xff\xd8\xff\xe0" + b"\x00" * 16 + b"thumb"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
-def _loc(client, demo, code="L01", event_id=None):
-    locs = client.get(f"{API}/admin/events/{event_id or demo.event_id}/locations", headers=demo.admin).json()
+def _loc(client, demo, code="L01"):
+    locs = client.get(f"{API}/admin/checkpoints", headers=demo.admin).json()
     return next(loc for loc in locs if loc["code"] == code)
 
 
@@ -22,7 +23,7 @@ def _upload(client, demo, loc_id, data=JPEG, thumb=THUMB, name="spot.jpg", ctype
     files = {"file": (name, data, ctype)}
     if thumb is not None:
         files["thumb"] = ("thumb.jpg", thumb, "image/jpeg")
-    return client.post(f"{API}/admin/events/{demo.event_id}/locations/{loc_id}/photo", files=files, headers=demo.admin)
+    return client.post(f"{API}/admin/checkpoints/{loc_id}/photo", files=files, headers=demo.admin)
 
 
 def _photo_rows() -> int:
@@ -40,7 +41,7 @@ def test_photo_is_stored_listed_served_and_replaced(client):
     assert res.json()["has_photo"] is True and res.json()["photo_updated_at"]
     assert _loc(client, demo)["has_photo"] is True
 
-    url = f"{API}/admin/events/{demo.event_id}/locations/{loc['id']}/photo"
+    url = f"{API}/admin/checkpoints/{loc['id']}/photo"
     full = client.get(url, headers=demo.admin)
     assert full.status_code == 200 and full.content == JPEG and full.headers["content-type"] == "image/jpeg"
     assert full.headers["x-content-type-options"] == "nosniff"
@@ -70,7 +71,7 @@ def test_removing_a_photo_and_deleting_a_checkpoint_take_the_photo_away(client):
     kept, deleted = _loc(client, demo, "L01"), _loc(client, demo, "L09")  # L09: in the pool, not in the game
     for loc in (kept, deleted):
         assert _upload(client, demo, loc["id"]).status_code == 200
-    base = f"{API}/admin/events/{demo.event_id}/locations"
+    base = f"{API}/admin/checkpoints"
     assert client.delete(f"{base}/{kept['id']}/photo", headers=demo.admin).status_code == 204
     assert client.get(f"{base}/{kept['id']}/photo", headers=demo.admin).status_code == 404
     assert _loc(client, demo, "L01")["has_photo"] is False
@@ -78,24 +79,24 @@ def test_removing_a_photo_and_deleting_a_checkpoint_take_the_photo_away(client):
     assert _photo_rows() == 0
 
 
-def test_photos_can_be_fixed_during_the_game_not_after_and_teams_never_get_them(client):
+def test_photos_can_be_fixed_at_any_time_and_teams_never_get_them(client):
     demo = seed(client, start=True)
     loc_id = _loc(client, demo)["id"]
     assert _upload(client, demo, loc_id).status_code == 200  # adding one on the day is fine
-    url = f"{API}/admin/events/{demo.event_id}/locations/{loc_id}/photo"
+    url = f"{API}/admin/checkpoints/{loc_id}/photo"
     assert client.get(url, headers=demo.teams["Dragon Warriors"]["headers"]).status_code == 401
     assert client.post(f"{API}/admin/events/{demo.event_id}/end", headers=demo.admin).status_code == 200
-    late = _upload(client, demo, loc_id)
-    assert late.status_code == 409 and "ended" in late.json()["detail"]
-    assert client.get(url, headers=demo.admin).status_code == 200  # still viewable afterwards
+    assert _upload(client, demo, loc_id, data=PNG, thumb=None, name="x.png", ctype="image/png").status_code == 200  # the library outlives the event
+    assert client.get(url, headers=demo.admin).content == PNG
 
 
-def test_copying_an_event_keeps_its_checkpoint_photos(client):
-    demo = seed(client)
-    _upload(client, demo, _loc(client, demo)["id"])
-    res = client.post(f"{API}/admin/events", json={"name": "Real hunt", "clone_from_event_id": demo.event_id}, headers=demo.admin)
-    assert res.status_code in (200, 201), res.text
-    copy = _loc(client, demo, event_id=res.json()["id"])
-    assert copy["has_photo"] is True
-    got = client.get(f"{API}/admin/events/{res.json()['id']}/locations/{copy['id']}/photo", headers=demo.admin)
-    assert got.content == JPEG
+def test_checkpoints_and_photos_outlive_a_restarted_game(client):
+    demo = seed(client, start=True)
+    loc = _loc(client, demo)
+    _upload(client, demo, loc["id"])
+    client.post(f"{API}/admin/events/{demo.event_id}/end", headers=demo.admin)
+    assert client.post(f"{API}/admin/events/{demo.event_id}/restart", headers=demo.admin).status_code == 200
+    same = _loc(client, demo)
+    assert same["id"] == loc["id"] and same["qr_token"] == loc["qr_token"] and same["has_photo"] is True
+    assert client.get(f"{API}/admin/checkpoints/{loc['id']}/photo", headers=demo.admin).content == JPEG
+    assert _photo_rows() == 1

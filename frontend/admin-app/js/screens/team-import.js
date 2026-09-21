@@ -6,7 +6,8 @@ import { esc, toast } from '../../../shared/js/ui.js';
  * event-scoped. Two Round 2 additions:
  *   - a "Team Code" column is kept, so importing Round 1's "Round 2
  *     Qualifiers" export gives every team the login it already has;
- *   - an optional "Sentence" column fills in each team's secret sentence.
+ *   - an optional "Sentence" column fills in each team's secret sentence;
+ *     rows without one are dealt a different line from the pool.
  */
 
 const STATUS_LABEL = {
@@ -141,7 +142,7 @@ export function openTeamImportModal(eventId, onImported) {
                 <td class="mono">${esc(r.password) || '<span class="muted">-</span>'}</td>
                 <td>${esc(r.leader_name) || '<span class="muted">-</span>'}</td>
                 <td class="mono">${esc(r.leader_phone) || '<span class="muted">-</span>'}</td>
-                <td style="font-size:.7rem;max-width:160px;">${esc(r.sentence) || '<span class="muted">-</span>'}</td>
+                <td style="font-size:.7rem;max-width:160px;">${esc(r.sentence) || '<span class="muted">dealt automatically</span>'}</td>
                 <td><span class="pill ${r.status === 'OK' ? 'ACTIVE' : 'NOT_STARTED'}" title="${esc(r.message)}">${STATUS_LABEL[r.status] || r.status}</span></td>
               </tr>`).join('')}
           </tbody>

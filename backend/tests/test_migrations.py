@@ -75,3 +75,61 @@ def test_0004_carries_face_cards_onto_existing_routes(monkeypatch):
         prices = dict(conn.execute(text("SELECT kind, cost FROM powers ORDER BY kind")).all())
         assert prices == {"FREEZE": 30, "JAM": 20, "REFLECT": 35, "TRAP": 40, "WARD": 25}
         assert "help_requests" not in inspect(engine).get_table_names()
+        # 0006: checkpoints left the event
+        assert "event_id" not in {c["name"] for c in inspect(engine).get_columns("locations")}
+
+
+def test_0006_merges_each_events_checkpoints_into_one_library(monkeypatch):
+    """Two events with their own L01: the running event's copy survives,
+    the ended event's routes and scans now point at it."""
+    import app.database as database
+
+    if not settings.is_sqlite:
+        return
+    path = pathlib.Path(tempfile.mkdtemp(prefix="round2-mig-")) / "mig.db"
+    engine = create_engine(f"sqlite:///{path.as_posix()}")
+    monkeypatch.setattr(database, "engine", engine)
+    command.upgrade(alembic_config(), "0005")
+    with engine.begin() as conn:
+        for eid, status, created in (("OLD", "ENDED", "2026-01-01"), ("NEW", "LIVE", "2026-02-01")):
+            conn.execute(text(f"INSERT INTO events (id, name, status, settings, final_location_name, created_at) VALUES ('{eid}', '{eid}', '{status}', '{{}}', 'Bench', '{created}')"))
+            conn.execute(text(
+                "INSERT INTO locations (id, event_id, code, name, latitude, longitude, geofence_radius_m, is_selected, qr_token, created_at) "
+                f"VALUES ('L01-{eid}', '{eid}', 'L01', 'Gate {eid}', 0, 0, 40, 1, 'tok-{eid}', '{created}')"
+            ))
+            conn.execute(text(
+                "INSERT INTO teams (id, event_id, team_code, team_name, password_hash, status, power_points, foul_count, progress, start_offset_s, created_at) "
+                f"VALUES ('T-{eid}', '{eid}', 'T1', 'Team', 'x', 'NOT_STARTED', 100, 0, 0, 0, '{created}')"
+            ))
+            conn.execute(text(f"INSERT INTO route_stops (id, team_id, location_id, seq) VALUES ('S-{eid}', 'T-{eid}', 'L01-{eid}', 1)"))
+    command.upgrade(alembic_config(), "0006")  # 0007 then keeps one event; this checks the merge alone
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id, name, qr_token FROM locations")).all() == [("L01-NEW", "Gate NEW", "tok-NEW")]
+        assert conn.execute(text("SELECT team_id, location_id FROM route_stops ORDER BY team_id")).all() == [("T-NEW", "L01-NEW"), ("T-OLD", "L01-NEW")]
+
+
+def test_0007_keeps_only_the_game_in_play(monkeypatch):
+    """Old databases held several events; the newest one that hasn't ended
+    survives with its teams, the rest go."""
+    import app.database as database
+
+    if not settings.is_sqlite:
+        return
+    path = pathlib.Path(tempfile.mkdtemp(prefix="round2-mig-")) / "mig.db"
+    engine = create_engine(f"sqlite:///{path.as_posix()}")
+    monkeypatch.setattr(database, "engine", engine)
+    command.upgrade(alembic_config(), "0006")
+    with engine.begin() as conn:
+        for eid, status, created in (("OLD", "ENDED", "2026-01-01"), ("REAL", "LIVE", "2026-02-01"), ("NEWER-DRAFT", "DRAFT", "2026-03-01")):
+            conn.execute(text(f"INSERT INTO events (id, name, status, settings, final_location_name, created_at) VALUES ('{eid}', '{eid}', '{status}', '{{}}', 'Bench', '{created}')"))
+            conn.execute(text(
+                "INSERT INTO teams (id, event_id, team_code, team_name, password_hash, status, power_points, foul_count, progress, start_offset_s, created_at) "
+                f"VALUES ('T-{eid}', '{eid}', 'T1', 'Team', 'x', 'NOT_STARTED', 100, 0, 0, 0, '{created}')"
+            ))
+            conn.execute(text(f"INSERT INTO powers (id, event_id, kind, cost, max_per_team, active) VALUES ('P-{eid}', '{eid}', 'FREEZE', 30, 3, 1)"))
+    command.upgrade(alembic_config(), "head")
+    with engine.connect() as conn:
+        # The newest event is an empty DRAFT, but the game in play (LIVE) wins.
+        assert conn.execute(text("SELECT id FROM events")).all() == [("REAL",)]
+        assert conn.execute(text("SELECT id FROM teams")).all() == [("T-REAL",)]
+        assert conn.execute(text("SELECT id FROM powers")).all() == [("P-REAL",)]

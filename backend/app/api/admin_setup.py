@@ -1,4 +1,14 @@
-"""Event setup: locations (+ photos), the built-in puzzles overview, power prices, routes (with each team's face cards), QR sheet."""
+"""Event setup.
+
+Two routers:
+
+* ``library`` (``/admin/checkpoints``): the checkpoints - GPS points, photos,
+  QR codes - and the built-in puzzles overview and QR sheet. One library
+  shared by every event, so a new event reuses the same spots and the
+  stickers already on the walls.
+* ``router`` (``/admin/events/{event_id}``): what belongs to one event -
+  power prices and the routes (with each team's face cards).
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Response, UploadFile, status
@@ -14,22 +24,31 @@ from app.schemas.schemas import LocationIn, LocationPatch, PowerPriceIn, RouteIn
 from app.services import audit, event_service, puzzles, route_service
 
 router = APIRouter(prefix="/admin/events/{event_id}", tags=["admin-setup"])
+library = APIRouter(prefix="/admin/checkpoints", tags=["admin-checkpoints"])
+
+IN_USE = (EventStatus.CONFIGURED, EventStatus.LIVE, EventStatus.PAUSED)
 
 
-def _draft_only(event: Event, what: str) -> None:
-    if event.status != EventStatus.DRAFT:
-        raise ConflictError(f"{what} can only change while the event is in DRAFT. Unlock the configuration first.")
+def event_using_checkpoints(db: Session) -> Event | None:
+    """The event whose routes currently depend on the library, if any: a
+    locked or running one. While it exists the set of checkpoints can't
+    change (names, GPS points and photos always can)."""
+    return db.scalar(select(Event).where(Event.status.in_(IN_USE)).order_by(Event.created_at.desc()))
 
 
-def _not_ended(event: Event) -> None:
-    if event.status == EventStatus.ENDED:
-        raise ConflictError("The event has ended.")
+def _structure_free(db: Session, what: str) -> None:
+    event = event_using_checkpoints(db)
+    if event is not None:
+        raise ConflictError(
+            f"{what} can't change while '{event.name}' is {event.status} - its routes are built on these checkpoints. "
+            "End the event, or unlock it back to DRAFT, first."
+        )
 
 
-def _load_location(db: Session, event: Event, location_id: str) -> Location:
+def _load_location(db: Session, location_id: str) -> Location:
     loc = db.get(Location, location_id)
-    if loc is None or loc.event_id != event.id:
-        raise NotFoundError("Location not found in this event.")
+    if loc is None:
+        raise NotFoundError("Checkpoint not found.")
     return loc
 
 
@@ -50,24 +69,28 @@ def location_out(loc: Location) -> dict:
     }
 
 
-# --- locations ------------------------------------------------------------------
+# --- the checkpoint library ---------------------------------------------------------
 
 
-@router.get("/locations")
-def list_locations(event_id: str, _admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    return [location_out(l) for l in db.scalars(select(Location).where(Location.event_id == event.id).order_by(Location.code))]
+@library.get("")
+def list_checkpoints(_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    return [location_out(l) for l in db.scalars(select(Location).order_by(Location.code))]
 
 
-@router.post("/locations", status_code=status.HTTP_201_CREATED)
-def create_location(event_id: str, payload: LocationIn, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    _draft_only(event, "Locations")
-    count = len(db.scalars(select(Location.id).where(Location.event_id == event.id)).all())
+@library.get("/in-use")
+def checkpoints_in_use(_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Which event (if any) currently locks the set of checkpoints."""
+    event = event_using_checkpoints(db)
+    return {"event": {"id": event.id, "name": event.name, "status": event.status} if event else None}
+
+
+@library.post("", status_code=status.HTTP_201_CREATED)
+def create_checkpoint(payload: LocationIn, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    _structure_free(db, "Checkpoints")
+    count = len(db.scalars(select(Location.id)).all())
     if count >= route_service.MAX_POOL:
-        raise ConflictError(f"An event can have at most {route_service.MAX_POOL} locations (L01-L15).")
+        raise ConflictError(f"The library holds at most {route_service.MAX_POOL} checkpoints (L01-L15).")
     loc = Location(
-        event_id=event.id,
         code=payload.code,
         name=payload.name.strip(),
         latitude=payload.latitude,
@@ -78,40 +101,37 @@ def create_location(event_id: str, payload: LocationIn, admin: Admin = Depends(g
     )
     db.add(loc)
     db.flush()
-    audit.log_admin(db, admin, event.id, "LOCATION_ADDED", f"{loc.code} {loc.name}")
+    audit.log_admin(db, admin, None, "LOCATION_ADDED", f"{loc.code} {loc.name}")
     db.commit()
     return location_out(loc)
 
 
-@router.patch("/locations/{location_id}")
-def update_location(event_id: str, location_id: str, payload: LocationPatch, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    _not_ended(event)
-    loc = _load_location(db, event, location_id)
+@library.patch("/{location_id}")
+def update_checkpoint(location_id: str, payload: LocationPatch, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    loc = _load_location(db, location_id)
     changes = payload.model_dump(exclude_unset=True)
     if "is_selected" in changes and changes["is_selected"] != loc.is_selected:
-        _draft_only(event, "The checkpoint selection")
+        _structure_free(db, "The checkpoint selection")
     # Names and coordinates may be corrected at any time (e.g. fixing a GPS
     # point on the day); they only affect the radar.
     for key, value in changes.items():
         setattr(loc, key, value.strip() if isinstance(value, str) else value)
-    audit.log_admin(db, admin, event.id, "LOCATION_UPDATED", f"{loc.code}: " + ", ".join(f"{k}={v}" for k, v in changes.items()))
+    audit.log_admin(db, admin, None, "LOCATION_UPDATED", f"{loc.code}: " + ", ".join(f"{k}={v}" for k, v in changes.items()))
     db.commit()
     return location_out(loc)
 
 
-@router.delete("/locations/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_location(event_id: str, location_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    _draft_only(event, "Locations")
-    loc = _load_location(db, event, location_id)
-    audit.log_admin(db, admin, event.id, "LOCATION_DELETED", f"{loc.code} {loc.name}")
+@library.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_checkpoint(location_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    _structure_free(db, "Checkpoints")
+    loc = _load_location(db, location_id)
+    audit.log_admin(db, admin, None, "LOCATION_DELETED", f"{loc.code} {loc.name}")
     db.delete(loc)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# --- location photos --------------------------------------------------------------
+# --- checkpoint photos --------------------------------------------------------------
 # Taken on site in Setup Routes. The console shrinks them before uploading
 # (about 1600 px + a small thumbnail), so these limits are generous.
 
@@ -142,20 +162,17 @@ def _read_image(upload: UploadFile, limit: int, what: str) -> tuple[bytes, str]:
     return data, kind
 
 
-@router.post("/locations/{location_id}/photo")
-def set_location_photo(
-    event_id: str,
+@library.post("/{location_id}/photo")
+def set_checkpoint_photo(
     location_id: str,
     file: UploadFile = File(...),
     thumb: UploadFile | None = File(None),
     admin: Admin = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """Add or replace a checkpoint's photo. Allowed until the event ends - it
-    doesn't change the game, so it can be added or fixed on the day."""
-    event = load_event(db, event_id)
-    _not_ended(event)
-    loc = _load_location(db, event, location_id)
+    """Add or replace a checkpoint's photo. Allowed at any time - it doesn't
+    change the game, so it can be added or fixed on the day."""
+    loc = _load_location(db, location_id)
     data, kind = _read_image(file, MAX_PHOTO_BYTES, "photo")
     thumb_data, thumb_kind = _read_image(thumb, MAX_THUMB_BYTES, "thumbnail") if thumb is not None else (None, None)
     photo = loc.photo
@@ -164,21 +181,14 @@ def set_location_photo(
     photo.content_type, photo.data, photo.size_bytes = kind, data, len(data)
     photo.thumb_content_type, photo.thumb = thumb_kind, thumb_data
     photo.uploaded_at = utcnow()
-    audit.log_admin(db, admin, event.id, "LOCATION_PHOTO_SET", f"{loc.code} ({max(1, len(data) // 1024)} KB)")
+    audit.log_admin(db, admin, None, "LOCATION_PHOTO_SET", f"{loc.code} ({max(1, len(data) // 1024)} KB)")
     db.commit()
     return location_out(loc)
 
 
-@router.get("/locations/{location_id}/photo")
-def get_location_photo(
-    event_id: str,
-    location_id: str,
-    thumb: bool = False,
-    _admin: Admin = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    event = load_event(db, event_id)
-    photo = _load_location(db, event, location_id).photo
+@library.get("/{location_id}/photo")
+def get_checkpoint_photo(location_id: str, thumb: bool = False, _admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    photo = _load_location(db, location_id).photo
     if photo is None:
         raise NotFoundError("This checkpoint has no photo.")
     body, kind = (photo.thumb, photo.thumb_content_type) if thumb and photo.thumb is not None else (photo.data, photo.content_type)
@@ -186,26 +196,26 @@ def get_location_photo(
     return Response(content=body, media_type=kind, headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
 
 
-@router.delete("/locations/{location_id}/photo", status_code=status.HTTP_204_NO_CONTENT)
-def delete_location_photo(event_id: str, location_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    _not_ended(event)
-    loc = _load_location(db, event, location_id)
+@library.delete("/{location_id}/photo", status_code=status.HTTP_204_NO_CONTENT)
+def delete_checkpoint_photo(location_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    loc = _load_location(db, location_id)
     if loc.photo is not None:
         loc.photo = None  # delete-orphan removes the row
-        audit.log_admin(db, admin, event.id, "LOCATION_PHOTO_REMOVED", loc.code)
+        audit.log_admin(db, admin, None, "LOCATION_PHOTO_REMOVED", loc.code)
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/locations/{location_id}/regenerate-qr")
-def regenerate_qr(event_id: str, location_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    event = load_event(db, event_id)
-    if event.status not in (EventStatus.DRAFT, EventStatus.CONFIGURED):
-        raise ConflictError("QR codes can't change once the game is live - the printed sticker would stop working.")
-    loc = _load_location(db, event, location_id)
+@library.post("/{location_id}/regenerate-qr")
+def regenerate_qr(location_id: str, admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """A new sticker for one checkpoint. Not while a game is running: the
+    printed sticker would stop working under the teams' feet."""
+    running = db.scalar(select(Event).where(Event.status.in_((EventStatus.LIVE, EventStatus.PAUSED))))
+    if running is not None:
+        raise ConflictError(f"QR codes can't change while '{running.name}' is {running.status} - the printed sticker would stop working.")
+    loc = _load_location(db, location_id)
     loc.qr_token = event_service.new_qr_token(db)
-    audit.log_admin(db, admin, event.id, "QR_REGENERATED", loc.code)
+    audit.log_admin(db, admin, None, "QR_REGENERATED", loc.code)
     db.commit()
     return location_out(loc)
 
@@ -213,11 +223,10 @@ def regenerate_qr(event_id: str, location_id: str, admin: Admin = Depends(get_cu
 # --- puzzles (built in - app/services/puzzles) ------------------------------------
 
 
-@router.get("/puzzles")
-def list_puzzles(event_id: str, _admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+@library.get("/puzzles")
+def list_puzzles(_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
     """Which built-in puzzle each checkpoint has. Nothing to write or edit:
     the type follows the checkpoint number, and every team gets its own version."""
-    event = load_event(db, event_id)
     return {
         "types": [{"kind": m.KIND, "label": m.LABEL, "instructions": m.INSTRUCTIONS} for m in puzzles.ORDER],
         "checkpoints": [
@@ -229,9 +238,21 @@ def list_puzzles(event_id: str, _admin: Admin = Depends(get_current_admin), db: 
                 "kind": puzzles.kind_for_code(l.code),
                 "label": puzzles.label(puzzles.kind_for_code(l.code)),
             }
-            for l in db.scalars(select(Location).where(Location.event_id == event.id).order_by(Location.code))
+            for l in db.scalars(select(Location).order_by(Location.code))
         ],
     }
+
+
+# --- QR sheet ---------------------------------------------------------------------
+
+
+@library.get("/qr-codes")
+def qr_codes(_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Tokens for the printable sheet. The admin console renders them as QR
+    images that link to the team app, so a phone's normal camera works too.
+    Stickers are permanent: print once, reuse for every event."""
+    locs = db.scalars(select(Location).order_by(Location.code))
+    return {"codes": [{"code": l.code, "name": l.name, "token": l.qr_token, "is_selected": l.is_selected} for l in locs]}
 
 
 # --- powers ---------------------------------------------------------------------
@@ -278,7 +299,7 @@ def set_powers(event_id: str, payload: list[PowerPriceIn], admin: Admin = Depend
 
 
 def _routes_out(db: Session, event: Event) -> dict:
-    locs = route_service.selected_locations(db, event.id)
+    locs = route_service.selected_locations(db)
     teams = list(db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.team_name)))
     return {
         "status": event.status,
@@ -329,17 +350,3 @@ def set_route(event_id: str, team_id: str, payload: RouteIn, admin: Admin = Depe
     return _routes_out(db, event)
 
 
-# --- QR sheet ---------------------------------------------------------------------
-
-
-@router.get("/qr-codes")
-def qr_codes(event_id: str, _admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)):
-    """Tokens for the printable sheet. The admin console renders them as QR
-    images that link to the team app, so a phone's normal camera works too."""
-    event = load_event(db, event_id)
-    locs = db.scalars(select(Location).where(Location.event_id == event.id).order_by(Location.code))
-    return {
-        "event_name": event.name,
-        "status": event.status,
-        "codes": [{"code": l.code, "name": l.name, "token": l.qr_token, "is_selected": l.is_selected} for l in locs],
-    }

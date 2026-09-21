@@ -196,7 +196,7 @@ def test_games_are_played_against_the_server(client, monkeypatch):
 
 def test_admin_sees_the_built_in_plan_and_attempt_counts(client, monkeypatch):
     demo = seed(client, start=True)
-    plan = client.get(f"{API}/admin/events/{demo.event_id}/puzzles", headers=demo.admin).json()
+    plan = client.get(f"{API}/admin/checkpoints/puzzles", headers=demo.admin).json()
     assert [t["kind"] for t in plan["types"]] == ["scramble", "picture", "rps", "tictactoe", "riddle", "crossword"]
     assert {c["code"]: c["kind"] for c in plan["checkpoints"]}["L06"] == "crossword"
 

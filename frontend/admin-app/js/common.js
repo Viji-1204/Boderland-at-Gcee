@@ -1,13 +1,6 @@
 // Small helpers shared by the coordinator screens.
 import { esc, toast } from '../../shared/js/ui.js';
 
-const EVENT_KEY = 'bl2_admin_event';
-
-export function getEventId() { return localStorage.getItem(EVENT_KEY) || ''; }
-export function setEventId(id) {
-  if (id) localStorage.setItem(EVENT_KEY, id); else localStorage.removeItem(EVENT_KEY);
-}
-
 export const STATUS_LABEL = {
   DRAFT: 'Draft', CONFIGURED: 'Configured', LIVE: 'Live', PAUSED: 'Paused', ENDED: 'Ended',
   NOT_STARTED: 'Not started', WAITING: 'Waiting', ACTIVE: 'Hunting', PUZZLE_LOCKED: 'Puzzle',
@@ -121,5 +114,5 @@ export function passwordModal(title, minLength = 4) {
 
 export function noEventHTML() {
   return `<div class="empty-state"><div class="empty-icon"><span class="mi mi-xl">event_busy</span></div>
-    No event selected. Create or pick one on the <a href="#/events">Events</a> page.</div>`;
+    The game could not be loaded. Check the server and refresh.</div>`;
 }

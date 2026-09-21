@@ -2,9 +2,10 @@
 
 * ``ensure_super_admin`` - creates the first SUPER_ADMIN from ADMIN_USERNAME /
   ADMIN_PASSWORD if it doesn't exist yet (Round 1's seed_admin).
-* ``seed_demo_event`` - a complete, ready-to-lock demo event: 10 locations (8
-  selected, each with its built-in puzzle), 6 teams with Round 1-style logins,
-  routes generated (each with its own Jack/Queen/King). It runs automatically only on a
+* ``seed_demo_event`` - a complete, ready-to-lock demo event: the shared
+  checkpoint library (10 spots, 8 in the game, created once), 6 teams with
+  Round 1-style logins, routes generated (each with its own Jack/Queen/King).
+  It runs automatically only on a
   brand-new database in development, or on request:
 
     python -m app.seed            # just make sure the admin exists
@@ -23,7 +24,7 @@ from app.core.security import hash_password
 from app.database import SessionLocal
 from app.models import Admin, AdminRole, Event, EventStatus, Location, Power, PowerKind, Team, TeamPower, TeamStatus
 from app.services import route_service
-from app.services.event_service import DEFAULT_POWER_PRICES, new_qr_token
+from app.services.event_service import DEFAULT_POWER_PRICES, new_qr_token, the_event
 
 logger = logging.getLogger("round2.seed")
 
@@ -71,6 +72,28 @@ def ensure_super_admin(db: Session) -> bool:
     return True
 
 
+def ensure_checkpoints(db: Session) -> bool:
+    """The demo checkpoint library, created only if the library is empty.
+    Checkpoints are shared by every event, so a second demo event (or a real
+    one) reuses them - and their QR stickers."""
+    if db.scalar(select(func.count(Location.id))):
+        return False
+    for code, loc_name, lat, lng, selected in DEMO_LOCATIONS:
+        db.add(
+            Location(
+                code=code,
+                name=loc_name,
+                latitude=lat,
+                longitude=lng,
+                geofence_radius_m=40,
+                is_selected=selected,
+                qr_token=new_qr_token(db),
+            )
+        )
+    db.flush()
+    return True
+
+
 def seed_demo_event(db: Session, name: str = "Round 2 - Demo Hunt") -> Event:
     event = Event(
         name=name,
@@ -92,20 +115,7 @@ def seed_demo_event(db: Session, name: str = "Round 2 - Demo Hunt") -> Event:
     for kind, (cost, cap) in DEFAULT_POWER_PRICES.items():
         db.add(Power(event_id=event.id, kind=kind, cost=cost, max_per_team=cap, active=True))
 
-    for code, loc_name, lat, lng, selected in DEMO_LOCATIONS:
-        db.add(
-            Location(
-                event_id=event.id,
-                code=code,
-                name=loc_name,
-                latitude=lat,
-                longitude=lng,
-                geofence_radius_m=40,
-                is_selected=selected,
-                qr_token=new_qr_token(db),
-            )
-        )
-        db.flush()
+    ensure_checkpoints(db)
 
     for team_code, team_name, leader, phone, sentence in DEMO_TEAMS:
         team = Team(
@@ -132,15 +142,17 @@ def seed_demo_event(db: Session, name: str = "Round 2 - Demo Hunt") -> Event:
 def startup_seed() -> None:
     with SessionLocal() as db:
         ensure_super_admin(db)
-        if settings.should_seed_demo:
-            if (db.scalar(select(func.count(Event.id))) or 0) == 0:
-                seed_demo_event(db)
+        if (db.scalar(select(func.count(Event.id))) or 0) == 0:
+            if settings.should_seed_demo:
+                seed_demo_event(db)  # development: a ready-to-play game
+            else:
+                the_event(db)  # production: an empty game, ready for setup
         db.commit()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed the Round 2 database (never deletes anything).")
-    parser.add_argument("--demo", action="store_true", help="add a demo event even if events already exist")
+    parser.add_argument("--demo", action="store_true", help="create the demo game (only if no game exists yet)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     from app.migrate import run_migrations
@@ -149,7 +161,10 @@ def main() -> None:
     with SessionLocal() as db:
         ensure_super_admin(db)
         if args.demo:
-            seed_demo_event(db)
+            if db.scalar(select(func.count(Event.id))):
+                print("A game already exists - the app runs a single event, so no demo was added.")
+            else:
+                seed_demo_event(db)
         db.commit()
     print("Seed complete.")
 

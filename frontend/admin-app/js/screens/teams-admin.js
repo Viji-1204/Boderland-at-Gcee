@@ -51,8 +51,14 @@ export function renderTeamsAdmin(main, ctx) {
                 </tr>`).join('')}
             </tbody>
           </table>
-          <p class="r2-hint-text">Sentences are split into one fragment per checkpoint when you lock the event. Put <code>|</code> between words to choose the cut points yourself.</p>
+          <p class="r2-hint-text">Every team gets a different secret sentence automatically when it is created (an Alice in Borderland line from a pool of 20) - nothing to type. You can still change one while the game is in DRAFT: put <code>|</code> between words to choose the cut points yourself. Sentences are split into one fragment per checkpoint at lock.
+            ${teams.some((t) => !t.sentence) ? '<button class="btn tiny primary" id="deal-sentences" type="button" style="margin-left:8px;"><span class="mi mi-sm">auto_fix_high</span> Deal sentences to the teams missing one</button>' : ''}</p>
         </div>`;
+
+      const deal = body.querySelector('#deal-sentences');
+      if (deal) deal.addEventListener('click', async () => {
+        if (await guarded(() => api.admin.teams.dealSentences(ctx.eventId), 'Sentences dealt')) load();
+      });
 
       body.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => editTeam(teams.find((t) => t.id === b.dataset.edit))));
       body.querySelectorAll('[data-pw]').forEach((b) => b.addEventListener('click', async () => {
@@ -96,13 +102,13 @@ export function renderTeamsAdmin(main, ctx) {
     ${field('leader_name', 'Leader name')}
     ${field('leader_phone', 'Leader phone', '', 'placeholder="Password = first 4 digits"')}
     ${field('password', 'Password (optional)', '', 'placeholder="Only if you don\'t want the phone rule"')}
-    <div class="field"><label class="tier-label"><span class="primary">Secret sentence</span></label><textarea class="r2-textarea" name="sentence"></textarea></div>`, {
+    <div class="field"><label class="tier-label"><span class="primary">Secret sentence (optional)</span><span class="secondary">Leave empty - a different Alice in Borderland line is dealt to each team</span></label><textarea class="r2-textarea" name="sentence" placeholder="Dealt automatically if left empty"></textarea></div>`, {
     submitLabel: 'Create team',
     onSubmit: async (fd) => {
       const body = Object.fromEntries(Array.from(fd.entries()).map(([k, v]) => [k, String(v).trim() || null]));
       const res = await guarded(() => api.admin.teams.create(ctx.eventId, body));
       if (!res) return false;
-      toast(`Created ${res.team_code} - password ${res.password}`, { success: true, duration: 8000 });
+      toast(`Created ${res.team_code} - password ${res.password}. Sentence: ${res.sentence || '-'}`, { success: true, duration: 9000 });
       load();
       return true;
     },
